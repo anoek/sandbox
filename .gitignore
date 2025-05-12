@@ -1,0 +1,11 @@
+/target
+/coverage
+/generated-test-data
+/vendor
+*.profraw
+*.qcow2
+/dist
+/build
+
+dev_sandbox.sh
+.aider*

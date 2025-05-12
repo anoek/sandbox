@@ -1,0 +1,2 @@
+enum-variant-name-threshold = 10
+allow-unwrap-in-tests       = true

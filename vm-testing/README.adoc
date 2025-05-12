@@ -1,0 +1,8 @@
+= VM Testing
+
+This directory contains various scripts used for testing on different VM images. This is
+used to test on different file systems, different mount points, different distributions,
+and different architectures.
+
+The scripts are numbered and should in general be run in order. They are intended to be
+idempotent, so can be run independently if there is a part that is failing.

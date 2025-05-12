@@ -1,0 +1,47 @@
+= Contributing
+
+:uri-repo: https://github.com/anoek/sandbox
+:uri-help-base: https://help.github.com/articles
+:uri-issues: {uri-repo}/issues
+:uri-fork-help: {uri-help-base}/fork-a-repo
+:uri-branch-help: {uri-fork-help}#create-branches
+:uri-pr-help: {uri-help-base}/using-pull-requests
+
+
+== License Agreement
+
+By contributing changes to this repository, you agree to license your contributions under the MIT license.
+This ensures your contributions have the same license as the project and that the community is free to use your contributions.
+You also assert that you are the original author of the work that you are contributing unless otherwise stated.
+
+== Submitting an Issue
+
+We use the {uri-issues}[issue tracker on GitHub] associated with this project to track bugs and features (i.e., issues).
+
+Before submitting an issue, make sure it hasn't already been submitted by using the {uri-issues}[search feature].
+Please be sure to check closed issues as well as the issue may have been recently fixed, or the issue may have been closed for another reason.
+
+If you've determined that your issue has not already been reported, please follow these guidelines when submitting an issue:
+
+. Use an actionable title.
+. Add a clear and concise description.
+. If you are reporting a bug, include complete reproduction steps including what flavor and version of Linux you are using.
+
+== Submitting a Pull Request
+
+Developing will require a few standard things installed, namely `make`, `jq`,
+and an up to date rust toolchain. Building package for distribution using our
+Makefile is done using `fpm`. Normal testing shouldn't require anything exotic,
+but performing the additional VM based testing will require libvirt/virsh/qemu
+and probably a few other things, see `vm-testing/01-setup-hot-for-vm-testing.sh`.
+
+
+. {uri-fork-help}[Fork the repository].
+. {uri-branch-help}[Create a topic branch] (preferably using the pattern `issue-XYZ`, where `XYZ` is the issue number).
+. Install the pre-commit hooks by running `make install-pre-commit-hooks`, this will help catch lint, format, and spelling errors before committing code.
+. Make your changes and update or add any applicable tests. 
+    - We require 100% test coverage measured by line before merging.
+    - Tests should by and large be integration tests. Unit tests are permissible
+      only when handling edge cases isn't something that can be reached by an integration test reasonably.
+    - Do not combine unrelated changes in a single pull request.
+. {uri-pr-help}[Submit a pull request].

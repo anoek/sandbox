@@ -1,0 +1,11 @@
+-s dir
+--name sandbox
+--license mit
+--description "Run commands in a sandboxed copy-on-write view of your computer"
+--url "https://github.com/anoek/sandbox"
+--maintainer "Akita Noek <akita@noek.net>"
+--deb-recommends diffutils
+--pacman-optional-depends diffutils
+--rpm-compression-level 9
+--after-install packaging/after-install
+--after-upgrade packaging/after-install

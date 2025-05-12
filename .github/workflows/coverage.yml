@@ -1,0 +1,54 @@
+name: Coverage Testing
+
+on:
+    push:
+        branches: ["main"]
+        paths:
+            - "**/Cargo.toml"
+            - "**/Cargo.lock"
+            - "**/src/**"
+            - "**/tests/**"
+    pull_request:
+        branches: ["main"]
+        paths:
+            - "**/Cargo.toml"
+            - "**/Cargo.lock"
+            - "**/src/**"
+            - "**/tests/**"
+
+env:
+    CARGO_TERM_COLOR: always
+
+jobs:
+    run-coverage:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Run tests
+              uses: nick-fields/retry@v3
+              with:
+                  timeout_minutes: 5
+                  command: |
+                      cargo install grcov
+                      make coverage
+                  max_attempts: 3
+
+            # 98.8 as opposed to 100% because on github and within our full-test
+            # ubuntu vm we seem to be unable to get some profraw data for the
+            # code that writes the llvm profile dump data at the end of setting
+            # up a sandbox (but the code is definitely run), as well as a
+            # pre-kill signal handling bit of code in exec, that is also
+            # definitely run, but the output is not captured.
+            - name: Check coverage is acceptable
+
+              run: |
+                  COVERAGE=$(cat coverage/html/coverage.json | jq -r '.message | sub("%"; "") | tonumber')
+                  if (( $(echo "$COVERAGE >= 98.8" | bc -l) )); then
+                      echo "Coverage of $COVERAGE% meets the minimum requirement of 98.8%"
+                  else
+                      echo "Coverage of $COVERAGE% is below the minimum requirement of 98.8%"
+                      exit 1
+                  fi

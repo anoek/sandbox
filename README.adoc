@@ -1,0 +1,289 @@
+//
+// Note: This file is used for both the man page and the github readme, please
+// edit accordingly.
+//
+
+ifndef::env-github,env-vscode[]
+= sandbox(1)
+:doctype: manpage
+:man manual: Sandbox Manual
+:man source: 0.1.0
+:man-linkstyle: pass:[blue R < >]
+endif::[]
+
+ifdef::env-github,env-vscode[]
+= Sandbox
+endif::[]
+
+ifndef::env-github,env-vscode[]
+== Name
+sandbox -
+endif::[]
+A tool for creating lightweight containerized views of your computer for safely
+running semi-trusted programs and selectively managing their output.
+
+== Description
+
+The `sandbox` tool creates lightweight containerized copy-on-write views of your
+computer with optional network access. Its primary purpose is to run
+semi-trusted programs—such as AI agents, app images, or shell installers—in an
+environment that mirrors your host computer, while preventing them from
+modifying your system. It can also be useful during development and testing for
+doing things like testing migrations or file reorganizations as it lets you run
+your code, examine the changes, discard the changes and try again rapidly.
+
+If you're satisfied with the outcome of your semi-trusted program, you can use the
+`sandbox` tool to selectively accept some or all of the changes made to your
+files. If you're not satisfied, you can simply discard the changes.
+
+Changes made within sandboxes are easily browsable and persist until you remove
+them, allowing you to reuse the same sandbox for as long as needed and by as many
+processes as desired. Sandboxes are also very lightweight and quick to create,
+making it practical to create new sandboxes for each task you need to perform.
+
+Please note: The use of the term `semi-trusted` is meant to distinguish code
+that may do things you don't want it to do, but isn't actively malicious in a
+sophisticated way. While the privilege escalations, data exfiltration, and other
+ways of escaping the sandbox would absolutely be considered a bug, it is not
+advised to run actively malicious code within a sandbox as there are not many
+layers to protect your host system from the malicious code, and it is easy for
+the code to detect it is running in a sandbox and potentially act accordingly.
+You should be using other more isolated environments for that sort of research.
+
+
+ifdef::env-github,env-vscode[]
+== Installation
+
+You can download precompiled binaries from
+https://github.com/anoek/sandbox/releases, or install from source using `make
+install`.
+
+Please note, this is a Linux tool and will not work on any other operating systems.
+
+Binaries are provided for x86_64 and arm64, but it should compile and work on 
+any architecture linux and rust supports.
+
+
+endif::[]
+
+
+== Synopsis
+            
+*sandbox* [OPTIONS] <SANDBOXED_COMMAND ...>
+
+*sandbox* [OPTIONS] [ACTION] [ACTION_ARGUMENTS...]
+
+== Quick examples:
+
+Hop into a sandboxed shell
+```
+ sandbox
+```
+
+Try that trendy web based install script in a sandbox first
+```
+ curl -s https://trustmebro.sh | sandbox sh
+```
+
+Let AIs run wild in YOLO mode without too much risk
+```
+ sandbox --net=host aider
+```
+
+Check what files were modified
+```
+ sandbox status
+```
+
+Accept changes to all the python files in the current directory, copying
+them from the sandbox to the host system.
+```
+ sandbox accept '*.py'
+```
+
+Stop all running processes in the sandbox and unmount the copy on write filesystem overlays.
+```
+ sandbox stop
+```
+
+== Actions:
+
+`config [NAME]`::
+  Read and display the configuration. Use in conjunction with `-v` to debug where configuration values are set.
+
+`list [PATTERN]`::
+List running sandboxes matching these patterns (defaults to all)
+
+`status [PATTERN]`::
+Show status of the sandbox matching the patterns in the current directory, or specified
+patterns. Use `status /` to show status of all files in the sandbox.
+
+`diff`::
+Show changes in the sandbox relative to the current changes
+
+`discard [PATTERN]`::
+Discard changes in the sandbox. This works relative to your current working directory only, and changes outside of your working directory are ignored.
+
+`accept [PATTERN]`::
+Accept changes in the sandbox. This works relative to your current working directory only, and changes outside of your working directory are ignored.
+
+`sync`::
+Synchronize changes that might have occurred in your host file system so that they are reflected in running sandboxes. Note, this performs a system wide filesystem sync and flushes all caches.
+
+`stop [--all]`::
+Kill all processes in the sandbox and unmount the filesystems. Note this will not discard any changes
+
+`help`::
+Print this message or the help of the given subcommand(s)
+
+// tag::options[]
+== Options:
+
+`-v, --log-level=<LOG_LEVEL>`::
+Set the log level to one of trace, debug, info, warn, or error. `-v` is shorthand for enabling verbose (trace) logging.
+
+`--name=<NAME>`::
+Name of the sandbox, defaults to "sandbox". Executables run within the same sandbox
+name will be run in the same container.
+
+`--storage-dir=<STORAGE_DIR>`::
+Base storage directory for all sandboxes. Defaults to `~/.sandboxes/`
+
+`--net[=host|none]`::
+Sets network access level. With no parameter this enables host networking. The
+default value is `none`, which disables network access. If you want to enable
+network access by default you can store net="host" in a config file.
+
+`--bind-fuse[=<BIND_FUSE>]`::
+Specify if you want to bind /dev/fuse within the sandbox. Disabling this will
+prevent appimages and FUSE-based filesystems from working, but may be considered
+more secure depending on your situation [possible values: true, false]
+
+`--json`::
+Formats action output as a JSON blob. Does nothing for sandboxed commands
+
+`--no-config`::
+Do not load config files. Environment variables will still be used.
+
+`-h, --help`::
+Print help
+
+`-V, --version`::
+Print version
+
+== Sandboxed Commands
+
+The CLI argument parser will treat anything after the `[OPTIONS]` as either an
+action (listed above), or a command to run in the sandbox. Running a command
+will implicitly start the sandbox if it isn't running already. 
+
+
+After the `[OPTIONS]`, provided you're not running an action, `sandbox` 
+will execute whatever command you provide, along with all subsequent arguments,
+in a sandboxed environment.
+
+If you want to run a command that happens to have the same name as an action,
+you can use the `--` flag to separate the command from the action arguments.
+For example:
+
+```
+ sandbox -- diff <path> <path>
+```
+
+
+
+== Config Files
+
+When invoked `sandbox` will look for files named `.sandbox.conf` and `.sandbox.toml` in your current directory and every ancestor directory up to you home directory (or / if invoked outside of a user's home directory), as well as in `~/.config/sandbox/config.(conf|toml)`, and finally `/etc/sandbox.(conf|toml)`, with more specific files overriding less specific ones.
+
+These config files can set most of the CLI options:
+
+```
+  # Name of the sandbox
+  name="my-sandbox"
+
+  # Path to the directory where the sandbox will store its data
+  storage_dir="/path/to/sandbox/storage"
+
+  # "none" or "host"
+  net="none"
+
+  # "true" or "false"
+  bind_fuse="true"
+
+  # "trace", "debug", "info", "warn", or "error"
+  log_level="info"
+```
+
+## Environment Variables
+
+You can also set most of the options with environment variables if you wish:
+
+```
+  SANDBOX_NAME="my-sandbox"
+  SANDBOX_STORAGE_DIR="/path/to/sandbox/storage"
+  SANDBOX_NET="none"
+  SANDBOX_BIND_FUSE="true"
+  SANDBOX_LOG_LEVEL="info"
+```
+
+Environment variables override config files, and CLI arguments take the highest precedence.
+
+
+== Caveats & Limitations
+
+=== Maturity
+
+Despite our test suite achieving a high degree of code coverage, this is still a
+fairly new project so please expect well covered bugs, security issues, and
+rough edges. Please report any issues you run into to the issue tracker:
+https://github.com/anoek/sandbox/issues
+
+=== Changing files in both the host system and the sandbox
+
+`sandbox` uses OverlayFS to manage tracking of file changes and allow
+applications to operate within the sandboxed environment seeing those file
+changes.
+
+The safe and supported way to operate with OverlayFS file systems is to
+avoid making any changes to either to the "lower" file system (
+your host filesystem), or to the "upper" file system (the changes that
+have been made in the sandbox.) In this regard, the safest way to work
+with a sandbox is to start your sandbox, do whatever you want to do within
+your sandbox, stop the sandbox, and then accept or reject your changes.
+
+That said it is often convenient to ignore this and make changes to the
+files on the host system, or to do things like accept or discard changes in
+a running sandbox (which makes changes to the "upper" file system). In practice
+this generally works as expected, the primary risk you run
+is seeing stale or cached data within the sandbox if you choose to do this.
+If you do run into visible problems, you may find running `sandbox sync` 
+will resolve your issues. If you would like to accept or reject changes from the
+sandbox without first stopping the sandbox, `sandbox` will happily oblige the
+request, but be aware that technically this is not supported by OverlayFS. These
+operations implicitly perform the same actions as `sandbox sync` after their
+work, so there is no need to call sync again after accepting or rejecting
+changes from the sandbox.
+
+=== Moving directories out from under a sandbox
+
+Moving directories around in your host system may be problematic in a running
+sandbox, particularly if the sandbox has also moved a moved directory or made
+changes within a directory. Although nothing should explode, it's easy to run
+into read errors and other file errors within your sandbox if you do this, so
+you should probably avoid doing such things.
+
+=== Partial accepts that depend on other non-accepted things
+
+In a sandbox, if you move or create a directory, then make a file change in
+said directory, then try to accept just that file, you will run into an error.
+Making some rather complicated moves and trying to only accept some of them may
+result in an accept erroring out in the middle and leaving a mess for you to clean
+up with moved directories moved to temporary locations.
+
+If you've done a lot of complicated stuff, either be careful about what you
+attempt to partially accept, or just accept everything.
+
+There's not much protection against trying to do silly things yet, so don't be
+surprised if silly things end up with silly results.
+

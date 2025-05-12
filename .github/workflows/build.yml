@@ -1,0 +1,29 @@
+name: Build
+
+on:
+    push:
+        branches: ["main"]
+        paths:
+            - "**/Cargo.toml"
+            - "**/Cargo.lock"
+            - "**/src/**"
+    pull_request:
+        branches: ["main"]
+        paths:
+            - "**/Cargo.toml"
+            - "**/Cargo.lock"
+            - "**/src/**"
+
+env:
+    CARGO_TERM_COLOR: always
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Build
+              run: cargo build --verbose
