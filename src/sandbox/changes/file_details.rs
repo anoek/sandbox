@@ -4,6 +4,7 @@ use nix::errno::Errno;
 use nix::fcntl::AtFlags;
 use nix::sys::stat::{FileStat, fstatat};
 use std::ffi::CString;
+use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
@@ -96,7 +97,18 @@ impl FileDetails {
 
     /* Returns the path as specified by the overlay redirect xattr if the file is renamed. */
     pub fn is_renamed(&self) -> Result<Option<PathBuf>> {
-        let mut buffer = vec![0; 65536]; // 64KiB is the max for XFS, BTRFS, and EXT4
+        self.is_renamed_with_buffer_size::<256>()
+    }
+    fn is_renamed_with_buffer_size<const BUFFER_SIZE: usize>(
+        &self,
+    ) -> Result<Option<PathBuf>> {
+        // The BUFFER_SIZE is an optimization for large change sets. By trying 256 (which works in
+        // a lot of real world cases) before falling back to 64KiB (the max for filesystems that
+        // handle the largest xattrs, XFS, BTRFS and ZFS [EXT 2/3/4 is 4k]) we shave of tens of
+        // percent of wall clock runtime. I think it's just helping us not blow our CPU cache as
+        // callgrind/cachegrind doesn't really change with this optimization, but the wall clock
+        // time does (at least on this computer.)
+        let mut buffer = [MaybeUninit::<u8>::uninit(); BUFFER_SIZE];
         let path_cstr = path_to_cstring(&self.path)?;
         let xattr_name = "trusted.overlay.redirect";
         let xattr_name_cstr = CString::new(xattr_name)
@@ -115,6 +127,9 @@ impl FileDetails {
             let errno = nix::errno::Errno::last_raw();
             if errno == libc::ENODATA {
                 return Ok(None);
+            } else if errno == libc::ERANGE && BUFFER_SIZE < 65536 {
+                // Try again with a larger buffer.
+                return self.is_renamed_with_buffer_size::<65536>();
             } else {
                 return Err(anyhow::anyhow!(
                     "Error getting xattr data for {}: {}",
@@ -124,16 +139,15 @@ impl FileDetails {
             }
         }
 
-        let rename_data = &buffer[..result as usize];
+        let rename_data = unsafe {
+            std::slice::from_raw_parts(
+                buffer.as_ptr() as *const u8,
+                result as usize,
+            )
+        };
         let rename_data_str = String::from_utf8_lossy(rename_data);
         Ok(Some(PathBuf::from(rename_data_str.to_string())))
     }
-
-    /*
-    pub fn same_mount(&self, other: &FileDetails) -> bool {
-        self.stat.st_dev == other.stat.st_dev
-    }
-    */
 
     pub fn display_type(&self) -> String {
         match self.stat.st_mode & libc::S_IFMT {
