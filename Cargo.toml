@@ -41,3 +41,10 @@ inherits  = "test"
 debug     = true
 opt-level = 0
 lto       = false
+
+[profile.release]
+opt-level = 3
+
+[profile.profiler]
+inherits = "release"
+debug    = true
