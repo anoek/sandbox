@@ -28,7 +28,8 @@ struct IgnorePattern {
     pattern: String,
 }
 
-const BUILT_IN_IGNORE_PATTERNS: &[&str] = &["/tmp/**", "**/.*/**", "**/.*"];
+const BUILT_IN_IGNORE_PATTERNS: &[&str] =
+    &["/tmp/**", "/home/*/.*/**", "/home/*/.*"];
 
 impl Sandbox {
     /**
