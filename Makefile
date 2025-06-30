@@ -158,6 +158,9 @@ build-release:
 		chown root:root target/x86_64-unknown-linux-gnu/release/sandbox && \
 		chmod u+s target/x86_64-unknown-linux-gnu/release/sandbox'
 	
+build-for-profiling:
+	cargo build --profile profiler
+
 # Man page
 build/sandbox.1: README.adoc Cargo.toml
 	mkdir -p build
@@ -285,4 +288,4 @@ uninstall:
 	install-pre-commit-hooks ready-for-commit-tests clean clean-coverage-sandboxes \
 	test quick-test coverage coverage-report update-coverage-report \
 	full-test prepared-coverage-vm install install-cov-tools uninstall \
-	build-release completion-scripts package man
+	build-release completion-scripts package man build-for-profiling
