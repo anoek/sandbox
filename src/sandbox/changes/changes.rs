@@ -8,6 +8,7 @@ use log::error;
 use log::info;
 use nix::NixPath;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
@@ -21,6 +22,13 @@ struct UpperEntry {
     source_path: Option<PathBuf>,
     source_details: Option<FileDetails>,
 }
+
+struct IgnorePattern {
+    negate: bool,
+    pattern: String,
+}
+
+const BUILT_IN_IGNORE_PATTERNS: &[&str] = &["/tmp/**", "**/.*/**", "**/.*"];
 
 impl Sandbox {
     /**
@@ -191,6 +199,8 @@ impl Sandbox {
      * it easier to reason about and reduce the clutter of the `changes` function.
      */
     fn upper_entries(&self) -> Result<Vec<UpperEntry>> {
+        let mut resolved_ignores: HashMap<PathBuf, Vec<IgnorePattern>> =
+            HashMap::new();
         let mut ret = Vec::new();
 
         for walkdir_entry in WalkDir::new(&self.upper_base)
@@ -239,6 +249,11 @@ impl Sandbox {
                 lower_path.push(component);
             }
 
+            /* Check if we should ignore this based on ignore rules and files */
+            if self.is_ignored(&lower_path, path, &mut resolved_ignores) {
+                continue;
+            }
+
             let mut upper_path = self.upper_base.clone();
             upper_path.push(base);
             let upper_root = upper_path.clone();
@@ -272,6 +287,134 @@ impl Sandbox {
 
         Ok(ret)
     }
+
+    /* This function will check if a path is ignored based on the ignore rules and files.
+     *
+     * We're trying to follow the spirit of gitignore rules in which we look for ignore
+     * files in parent directories and apply all the rules in them first, all the way
+     * up to our current directory, last matching rule wins. We resolve these files within
+     * the overlay merged view.
+     *
+     * Presently we only go up to the mount point of the path. This should probably be expanded
+     * to look at all of the ancestors mounts in the future.
+     * */
+    fn is_ignored(
+        &self,
+        lower_path: &Path,
+        overlay_path: &Path,
+        resolved_ignores: &mut HashMap<PathBuf, Vec<IgnorePattern>>,
+    ) -> bool {
+        let mut base = self.overlay_base.clone();
+        let mut ignored = false;
+        let mut paths_to_check: Vec<(PathBuf, PathBuf)> = vec![];
+
+        let lower_path = lower_path
+            .to_str()
+            .expect("lower_path should have a string representation");
+
+        for pattern in BUILT_IN_IGNORE_PATTERNS {
+            if fast_glob::glob_match(pattern, lower_path) {
+                return true;
+            }
+        }
+
+        let components: Vec<_> = overlay_path
+            .components()
+            .map(|c| c.as_os_str().to_owned())
+            .collect();
+
+        for i in 0..components.len() {
+            base.push(&components[i]);
+
+            // Build the relative path from the remaining components
+            let relative_components = &components[i + 1..];
+            let relative_path = relative_components.iter().collect::<PathBuf>();
+
+            paths_to_check.push((base.clone(), relative_path));
+        }
+
+        for (path, relative_path) in paths_to_check {
+            let patterns = resolved_ignores
+                .entry(path.clone())
+                .or_insert_with(|| resolve_ignores(&path));
+
+            for pattern in patterns {
+                if fast_glob::glob_match(
+                    &pattern.pattern,
+                    relative_path
+                        .to_str()
+                        .expect("path should have a string representation"),
+                ) {
+                    ignored = !pattern.negate;
+                }
+            }
+
+            if ignored {
+                return ignored;
+            }
+        }
+
+        ignored
+    }
+}
+
+/* This function will look for .gitignore and .ignore files in the directories
+ * passed and will a list of patterns for all of them combined. */
+fn resolve_ignores(dir: &Path) -> Vec<IgnorePattern> {
+    let mut patterns: Vec<IgnorePattern> = Vec::new();
+
+    for ignore_file in &[".gitignore", ".ignore"] {
+        let file_path = dir.join(ignore_file);
+        if let Ok(content) = std::fs::read_to_string(&file_path) {
+            for line in content.lines() {
+                let mut trimmed = line.trim().to_string();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                let mut negate = false;
+
+                if trimmed.starts_with("!") {
+                    trimmed = trimmed
+                        .strip_prefix("!")
+                        .expect("! should be present")
+                        .to_string();
+                    negate = true;
+                }
+
+                /* Per https://git-scm.com/docs/gitignore
+                 * """
+                 *  If there is a separator at the beginning or middle (or both) of the pattern,
+                 *  then the pattern is relative to the directory level of the particular .gitignore
+                 *  file itself. Otherwise the pattern may also match at any level below the
+                 * .gitignore level.
+                 * """
+                 * */
+                if trimmed.contains("/") {
+                    if trimmed.starts_with("/") {
+                        trimmed = trimmed
+                            .strip_prefix("/")
+                            .expect("should be present")
+                            .to_string();
+                    }
+                    // otherwise we don't need to do anything but our pattern is treated as
+                    // as relative
+                } else {
+                    trimmed = format!("**{trimmed}");
+                }
+
+                patterns.push(IgnorePattern {
+                    negate,
+                    pattern: trimmed.clone(),
+                });
+                patterns.push(IgnorePattern {
+                    negate,
+                    pattern: format!("{trimmed}/**"),
+                });
+            }
+        }
+    }
+
+    patterns
 }
 
 pub fn by_reverse_source(a: &ChangeEntry, b: &ChangeEntry) -> Ordering {
