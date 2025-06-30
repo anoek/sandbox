@@ -9,3 +9,6 @@
 
 dev_sandbox.sh
 .aider*
+callgrind.out.*
+cachegrind.out.*
+perf.data*
