@@ -187,3 +187,39 @@ fn test_shell_completion_generation(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.exfail(&[], "COMPLETE", "invalid-shell"));
     Ok(())
 }
+
+/* This test doesn't really test much other than ensuring things don't explode
+ * with large xattrs, it is here primarily to cover the code that handles growing
+ * the buffer size in the is_renamed function. It'd be better if we tested it on
+ * a real file but with the limits of filename sizes and redirect=off I think it's
+ * hard to do, and the code is one line simple so meh. */
+#[rstest]
+fn exercise_large_xattr(mut sandbox: SandboxManager) -> Result<()> {
+    sandbox.run(&["touch", "testfile"])?;
+    let long_value = "a".repeat(300);
+
+    let upper_cwd_output = sandbox.run(&["config", "upper_cwd"])?;
+    let upper_cwd = String::from_utf8_lossy(&upper_cwd_output.stdout)
+        .trim()
+        .to_string();
+
+    let host_file_path = std::path::Path::new(&upper_cwd).join("testfile");
+
+    // Use setfattr as root to attach a large redirect xattr.
+    use std::process::Command;
+    let status = Command::new("sudo")
+        .args([
+            "setfattr",
+            "-n",
+            "trusted.overlay.redirect",
+            "-v",
+            &long_value,
+            host_file_path.to_str().expect("path conversion failed"),
+        ])
+        .status()?;
+
+    assert!(status.success());
+    sandbox.run(&["status"])?;
+
+    Ok(())
+}

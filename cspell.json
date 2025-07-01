@@ -183,6 +183,7 @@
         "serde",
         "setegid",
         "seteuid",
+        "setfattr",
         "SETFL",
         "setgid",
         "sethostname",
