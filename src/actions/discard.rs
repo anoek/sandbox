@@ -1,4 +1,5 @@
 use crate::{
+    config::Config,
     outln,
     sandbox::{Sandbox, changes::changes::by_staged_descending},
     util::sync_and_drop_caches,
@@ -6,11 +7,15 @@ use crate::{
 use anyhow::{Context, Result};
 use log::{debug, trace};
 
-pub fn discard(sandbox: &Sandbox, patterns: &[String]) -> Result<()> {
+pub fn discard(
+    config: &Config,
+    sandbox: &Sandbox,
+    patterns: &[String],
+) -> Result<()> {
     trace!("Discarding changes from sandbox {}", sandbox.name);
 
     let cwd = std::env::current_dir()?;
-    let changes = sandbox.changes()?;
+    let changes = sandbox.changes(config)?;
 
     let mut changes = changes.matching(&cwd, patterns);
     changes.sort_by(by_staged_descending);

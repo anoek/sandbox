@@ -101,10 +101,10 @@ Once we have a change set we can apply it.
 */
 
 use crate::outln;
-use crate::sandbox::Sandbox;
 use crate::sandbox::changes::changes::{by_destination, by_reverse_source};
 use crate::sandbox::changes::{EntryOperation, FileDetails};
 use crate::util::{find_mount_point, sync_and_drop_caches};
+use crate::{config::Config, sandbox::Sandbox};
 use anyhow::Result;
 use colored::*;
 use log::{debug, error, info, trace};
@@ -115,11 +115,15 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /* The accept function will accept the changes from the sandbox into the real filesystem. */
-pub fn accept(sandbox: &Sandbox, patterns: &[String]) -> Result<()> {
+pub fn accept(
+    config: &Config,
+    sandbox: &Sandbox,
+    patterns: &[String],
+) -> Result<()> {
     trace!("Accepting changes from sandbox {}", sandbox.name);
 
     let cwd = std::env::current_dir()?;
-    let all_changes = sandbox.changes()?;
+    let all_changes = sandbox.changes(config)?;
 
     let mut changes = all_changes.matching(&cwd, patterns);
     let non_matching_count = all_changes.len() - changes.len();

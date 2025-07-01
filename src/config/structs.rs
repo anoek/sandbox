@@ -18,6 +18,7 @@ pub struct PartialConfig {
     pub storage_dir: Option<String>,
     pub net: Option<Network>,
     pub bind_fuse: Option<bool>,
+    pub ignored: Option<bool>,
 }
 
 #[derive(Clone)]
@@ -31,4 +32,5 @@ pub struct Config {
     pub net: Network,
     pub sources: HashMap<String, String>,
     pub bind_fuse: bool,
+    pub ignored: bool,
 }

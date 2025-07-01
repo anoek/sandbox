@@ -147,6 +147,8 @@ impl SandboxManager {
             cmd.args(["-v"]);
         }
 
+        cmd.args(["--ignored"]);
+
         if !self.no_default_options
             && !args.iter().any(|arg| arg.starts_with("--name"))
         {

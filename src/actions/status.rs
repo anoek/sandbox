@@ -1,4 +1,5 @@
 use crate::{
+    config::Config,
     outln,
     sandbox::{
         Sandbox,
@@ -13,11 +14,15 @@ use anyhow::Result;
 use log::trace;
 use serde_json::{Value, json};
 
-pub fn status(sandbox: &Sandbox, patterns: &[String]) -> Result<()> {
+pub fn status(
+    config: &Config,
+    sandbox: &Sandbox,
+    patterns: &[String],
+) -> Result<()> {
     trace!("Status of sandbox {}", sandbox.name);
 
     let cwd = std::env::current_dir()?;
-    let all_changes = sandbox.changes()?;
+    let all_changes = sandbox.changes(config)?;
     let mut changes = all_changes.matching(&cwd, patterns);
     let non_matching_count = all_changes.len() - changes.len();
 

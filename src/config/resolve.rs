@@ -62,6 +62,20 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
 
+    if let Ok(ignored_env) = env::var("SANDBOX_IGNORED") {
+        if !ignored_env.is_empty() {
+            if let Ok(ignored_val) = bool::from_str(&ignored_env) {
+                partial_config.ignored = Some(ignored_val);
+                sources.insert("ignored".into(), "environment".into());
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Invalid value for SANDBOX_IGNORED: {}",
+                    ignored_env
+                ));
+            }
+        }
+    }
+
     // Override with CLI args if provided (highest precedence)
     if let Some(log_level) = cli.log_level {
         partial_config.log_level = Some(log_level);
@@ -86,6 +100,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("bind_fuse".into(), "cli".into());
     }
 
+    if cli.ignored {
+        partial_config.ignored = Some(true);
+        sources.insert("ignored".into(), "cli".into());
+    }
+
     // If nothing else, fill in with some default values
     let name = partial_config.name.unwrap_or("sandbox".to_string());
     if !sources.contains_key("name") {
@@ -100,6 +119,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     let bind_fuse = partial_config.bind_fuse.unwrap_or(true);
     if !sources.contains_key("bind_fuse") {
         sources.insert("bind_fuse".into(), "default".into());
+    }
+
+    let ignored = partial_config.ignored.unwrap_or(false);
+    if !sources.contains_key("ignored") {
+        sources.insert("ignored".into(), "default".into());
     }
 
     let storage_dir = resolve_sandbox_storage_dir(
@@ -143,6 +167,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         upper_cwd,
         overlay_cwd,
         log_level: partial_config.log_level.unwrap_or(log::LevelFilter::Info),
+        ignored,
         sources,
     };
 
@@ -363,5 +388,9 @@ fn merge_configs(
     if let Some(net) = override_config.net {
         base.net = Some(net);
         sources.insert("net".into(), source.into());
+    }
+    if let Some(ignored) = override_config.ignored {
+        base.ignored = Some(ignored);
+        sources.insert("ignored".into(), source.into());
     }
 }

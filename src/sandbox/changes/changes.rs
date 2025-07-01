@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::sandbox::changes::*;
 
 use crate::sandbox::Sandbox;
@@ -38,7 +39,7 @@ impl Sandbox {
      *
      * For more information on the algorithm see the accept action documentation.
      */
-    pub fn changes(&self) -> Result<ChangeEntries> {
+    pub fn changes(&self, config: &Config) -> Result<ChangeEntries> {
         let mut change_entries: Vec<ChangeEntry> = Vec::new();
 
         /* Files that are moved (and not re-created) will have a corresponding deleted indicator in
@@ -49,7 +50,7 @@ impl Sandbox {
 
         /* Get a list of all of the paths in the upper directory along with their corresponding
          * source and destination paths, and file details. */
-        let upper_entries = self.upper_entries()?;
+        let upper_entries = self.upper_entries(config.ignored)?;
 
         /* First pass to find all renamed paths and build a hash of where they are coming from
          * so we can avoid removing them when we see the whiteout/opaque. */
@@ -199,7 +200,7 @@ impl Sandbox {
      * This primarily exists to deal with decoding the base32 encoded paths and making
      * it easier to reason about and reduce the clutter of the `changes` function.
      */
-    fn upper_entries(&self) -> Result<Vec<UpperEntry>> {
+    fn upper_entries(&self, include_ignored: bool) -> Result<Vec<UpperEntry>> {
         let mut resolved_ignores: HashMap<PathBuf, Vec<IgnorePattern>> =
             HashMap::new();
         let mut ret = Vec::new();
@@ -251,7 +252,9 @@ impl Sandbox {
             }
 
             /* Check if we should ignore this based on ignore rules and files */
-            if self.is_ignored(&lower_path, path, &mut resolved_ignores) {
+            if !include_ignored
+                && self.is_ignored(&lower_path, path, &mut resolved_ignores)
+            {
                 continue;
             }
 
