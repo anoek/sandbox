@@ -276,7 +276,7 @@ impl ChangeEntries {
             })
             .collect();
 
-        let cwd_str = cwd.display().to_string();
+        let cwd_str = format!("{}/", cwd.display());
         ChangeEntries(
             self.0
                 .iter()
