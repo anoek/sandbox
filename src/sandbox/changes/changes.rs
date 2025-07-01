@@ -30,7 +30,7 @@ struct IgnorePattern {
 }
 
 const BUILT_IN_IGNORE_PATTERNS: &[&str] =
-    &["/tmp/**", "/home/*/.*/**", "/home/*/.*", "**/.git/**"];
+    &["/tmp/**", "/home/*/.*/**", "/home/*/.*", "**/.git/**", "**/.git"];
 
 impl Sandbox {
     /**
