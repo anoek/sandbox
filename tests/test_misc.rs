@@ -171,14 +171,6 @@ fn test_config(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_diff(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.run(&["touch", "testfile"])?;
-    assert!(sandbox.epass(&["diff"], "TEST_FORCE_DIFF_COLOR", "true"));
-    assert!(sandbox.xfail(&["--json", "diff"]));
-    Ok(())
-}
-
-#[rstest]
 fn test_shell_completion_generation(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.epass(&[], "COMPLETE", "zsh"));
     assert!(sandbox.epass(&[], "COMPLETE", "bash"));

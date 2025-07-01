@@ -126,7 +126,12 @@ pub fn main() -> Result<()> {
                 &sandbox,
                 &patterns.unwrap_or_default(),
             ),
-            cli::Action::Diff => actions::diff(&config, cli.json, &sandbox),
+            cli::Action::Diff { patterns } => actions::diff(
+                &config,
+                cli.json,
+                &sandbox,
+                &patterns.unwrap_or_default(),
+            ),
             cli::Action::Discard { patterns } => actions::discard(
                 &config,
                 &sandbox,

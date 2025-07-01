@@ -4,20 +4,31 @@ use colored::Colorize;
 use colored::control::SHOULD_COLORIZE;
 use log::trace;
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::process::Command;
 
-use crate::{config::Config, sandbox::Sandbox};
+use crate::{
+    config::Config,
+    sandbox::{Sandbox, changes::EntryOperation},
+};
 
-pub fn diff(config: &Config, json: bool, sandbox: &Sandbox) -> Result<()> {
+pub fn diff(
+    config: &Config,
+    json: bool,
+    sandbox: &Sandbox,
+    patterns: &[String],
+) -> Result<()> {
     trace!("Diffing sandbox {}", sandbox.name);
 
     if json {
         return Err(anyhow::anyhow!("JSON mode is not supported for diff"));
     }
 
-    let should_colorize = SHOULD_COLORIZE.should_colorize();
     let cwd = std::env::current_dir()?;
-    let overlay_path = config.overlay_cwd.to_string_lossy();
+    let all_changes = sandbox.changes(config)?;
+    let changes = all_changes.matching(&cwd, patterns);
+    let should_colorize = SHOULD_COLORIZE.should_colorize();
+    let upper_cwd_str = config.upper_cwd.to_string_lossy();
     let replacement = format!("<{}>", sandbox.name).cyan().to_string();
 
     #[cfg(feature = "coverage")]
@@ -28,33 +39,94 @@ pub fn diff(config: &Config, json: bool, sandbox: &Sandbox) -> Result<()> {
         should_colorize
     };
 
-    let output = Command::new("diff")
-        .arg("-ruN")
-        .arg(if should_colorize {
-            "--color=always"
-        } else {
-            "--color=never"
-        })
-        .arg(".")
-        .arg(config.overlay_cwd.clone())
-        .stdout(std::process::Stdio::piped())
-        .spawn()
-        .context(format!(
-            "failed to diff {} {}",
-            cwd.display(),
-            config.overlay_cwd.display(),
-        ))?;
+    for change in changes.iter() {
+        let stdout = std::io::stdout();
+        let mut stdout_lock = stdout.lock();
 
-    let stdout = output.stdout.context("Failed to capture stdout")?;
-    let reader = BufReader::new(stdout);
-    let stdout = std::io::stdout();
-    let mut stdout_lock = stdout.lock();
+        trace!(
+            "{:?} {} {}",
+            change.operation,
+            change.destination.display(),
+            change
+                .staged
+                .as_ref()
+                .map(|s| s.path.to_string_lossy())
+                .unwrap_or_else(|| "/dev/null".into()),
+        );
+        match &change.operation {
+            EntryOperation::Rename => {
+                if let Some(source) = &change.source {
+                    let from = source.path.display();
+                    let to = change.destination.display();
+                    let moved_msg = format!("### Moved {from} to {to}");
+                    if should_colorize {
+                        writeln!(stdout_lock, "{}", moved_msg.yellow())?;
+                    } else {
+                        writeln!(stdout_lock, "{}", moved_msg)?;
+                    }
+                }
+                continue; // Nothing further to diff
+            }
+            EntryOperation::Error(_) => continue,
+            EntryOperation::Set(_) | EntryOperation::Remove => {
+                if !change.destination.is_file() {
+                    if let Some(staged) = &change.staged {
+                        if !staged.is_file() {
+                            continue;
+                        }
+                    }
+                }
 
-    for line in reader.lines() {
-        let line = line.context("Failed to read line from diff output")?;
-        let processed_line = line.replace(&*overlay_path, &replacement);
-        writeln!(stdout_lock, "{}", processed_line)
-            .context("Failed to write to stdout")?;
+                // Paths: destination vs staged/null
+                let left_path: PathBuf = if change.destination.exists() {
+                    change.destination.clone()
+                } else {
+                    PathBuf::from("/dev/null")
+                };
+
+                let right_path: PathBuf =
+                    if let EntryOperation::Set(_) = &change.operation {
+                        match &change.staged {
+                            Some(staged) => staged.path.clone(),
+                            None => PathBuf::from("/dev/null"),
+                        }
+                    } else {
+                        PathBuf::from("/dev/null")
+                    };
+
+                let output = Command::new("diff")
+                    .arg("-uN")
+                    .arg(if should_colorize {
+                        "--color=always"
+                    } else {
+                        "--color=never"
+                    })
+                    .arg(&left_path)
+                    .arg(&right_path)
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()
+                    .with_context(|| {
+                        format!(
+                            "failed to diff {} {}",
+                            left_path.display(),
+                            right_path.display()
+                        )
+                    })?;
+
+                let diff_stdout =
+                    output.stdout.context("Failed to capture stdout")?;
+                let reader = BufReader::new(diff_stdout);
+
+                for line in reader.lines() {
+                    let line =
+                        line.context("Failed to read line from diff output")?;
+                    let processed_line =
+                        line.replace(&*upper_cwd_str, &replacement);
+                    writeln!(stdout_lock, "{}", processed_line)
+                        .context("Failed to write diff output")?;
+                }
+            }
+        }
     }
 
     Ok(())
