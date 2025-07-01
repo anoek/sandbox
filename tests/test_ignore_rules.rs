@@ -38,7 +38,7 @@ negate-me
 
     // Files that SHOULD be ignored
     let ignored_file = Path::new(&dir).join("ignored-file");
-    let ignored_dir_file = Path::new(&dir).join("ignored-dir/afile");
+    let ignored_dir_file = Path::new(&dir).join("ignored-dir/a-file");
     let ignored_tmp = Path::new(&dir).join("dir/tmp.tmp");
     let ignored_negate_dir = Path::new(&dir).join("negate-me/file.txt");
     let anchored_file = Path::new(&dir).join("anchored-file");
