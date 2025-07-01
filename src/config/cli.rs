@@ -62,6 +62,10 @@ pub struct Args {
     #[arg(long, action = clap::ArgAction::SetTrue)]
     pub no_config: bool,
 
+    /// Include files that would normally be filtered out by ignore rules.
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    pub ignored: bool,
+
     /***************/
     /* Subcommands */
     /***************/

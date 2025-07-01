@@ -10,6 +10,7 @@ use rstest::*;
 fn test_exercise_unmovable_files_remove(
     mut sandbox: SandboxManager,
 ) -> Result<()> {
+    sandbox.set_debug_mode(true);
     let char_device = sandbox.test_filename("test-file");
     println!("setting up char_device: {}", char_device);
     let output = Command::new("sudo")

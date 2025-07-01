@@ -121,16 +121,22 @@ pub fn main() -> Result<()> {
                     )
                 }
             }
-            cli::Action::Status { patterns } => {
-                actions::status(&sandbox, &patterns.unwrap_or_default())
-            }
+            cli::Action::Status { patterns } => actions::status(
+                &config,
+                &sandbox,
+                &patterns.unwrap_or_default(),
+            ),
             cli::Action::Diff => actions::diff(&config, cli.json, &sandbox),
-            cli::Action::Discard { patterns } => {
-                actions::discard(&sandbox, &patterns.unwrap_or_default())
-            }
-            cli::Action::Accept { patterns } => {
-                actions::accept(&sandbox, &patterns.unwrap_or_default())
-            }
+            cli::Action::Discard { patterns } => actions::discard(
+                &config,
+                &sandbox,
+                &patterns.unwrap_or_default(),
+            ),
+            cli::Action::Accept { patterns } => actions::accept(
+                &config,
+                &sandbox,
+                &patterns.unwrap_or_default(),
+            ),
         };
         if cli.json {
             if result.is_ok() {
