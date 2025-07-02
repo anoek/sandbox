@@ -63,16 +63,14 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     }
 
     if let Ok(ignored_env) = env::var("SANDBOX_IGNORED") {
-        if !ignored_env.is_empty() {
-            if let Ok(ignored_val) = bool::from_str(&ignored_env) {
-                partial_config.ignored = Some(ignored_val);
-                sources.insert("ignored".into(), "environment".into());
-            } else {
-                return Err(anyhow::anyhow!(
-                    "Invalid value for SANDBOX_IGNORED: {}",
-                    ignored_env
-                ));
-            }
+        if let Ok(ignored_val) = bool::from_str(&ignored_env) {
+            partial_config.ignored = Some(ignored_val);
+            sources.insert("ignored".into(), "environment".into());
+        } else {
+            return Err(anyhow::anyhow!(
+                "Invalid value for SANDBOX_IGNORED: {}",
+                ignored_env
+            ));
         }
     }
 

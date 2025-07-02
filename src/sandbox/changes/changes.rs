@@ -29,8 +29,13 @@ struct IgnorePattern {
     pattern: String,
 }
 
-const BUILT_IN_IGNORE_PATTERNS: &[&str] =
-    &["/tmp/**", "/home/*/.*/**", "/home/*/.*", "**/.git/**", "**/.git"];
+const BUILT_IN_IGNORE_PATTERNS: &[&str] = &[
+    "/tmp/**",
+    "/home/*/.*/**",
+    "/home/*/.*",
+    "**/.git/**",
+    "**/.git",
+];
 
 impl Sandbox {
     /**
@@ -403,7 +408,7 @@ fn resolve_ignores(dir: &Path) -> Vec<IgnorePattern> {
                     // otherwise we don't need to do anything but our pattern is treated as
                     // as relative
                 } else {
-                    trimmed = format!("**{trimmed}");
+                    trimmed = format!("**/{trimmed}");
                 }
 
                 patterns.push(IgnorePattern {

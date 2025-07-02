@@ -127,17 +127,15 @@ negate-me
 /// ignored files even when the --ignored CLI flag is not provided.
 #[rstest]
 fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
+    sandbox.set_debug_mode(true);
+
     // Prepare isolated dir
     let dir = sandbox.test_filename_no_rid("env-ignore-test");
     std::fs::create_dir_all(&dir)?;
 
-    // Remove top-level .gitignore in sandbox
-    sandbox.run(&["rm", ".gitignore"])?;
+    sandbox.run(&["sh", "-c", "echo 'ignored-file' > .gitignore"])?;
 
-    // Simple .gitignore ignoring a single file
-    std::fs::write(Path::new(&dir).join(".gitignore"), "ignored\n")?;
-
-    let ignored_file = Path::new(&dir).join("ignored");
+    let ignored_file = Path::new(&dir).join("ignored-file");
     let included_file = Path::new(&dir).join("included");
 
     // Create the files (using --ignored via helper, fine for creation phase)
@@ -151,8 +149,6 @@ fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
         .output()?;
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // The ignored file should not be present, the included file should be
     assert!(!stdout.contains(ignored_file.to_str().unwrap()));
     assert!(stdout.contains(included_file.to_str().unwrap()));
 
@@ -166,6 +162,43 @@ fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Both files should be reported now
+    assert!(stdout.contains(ignored_file.to_str().unwrap()));
+    assert!(stdout.contains(included_file.to_str().unwrap()));
+
+    // Invalid value for SANDBOX_IGNORED
+    let output = Command::new("sudo")
+        .env("SANDBOX_IGNORED", "cow")
+        .args(["-E", &sandbox.sandbox_bin])
+        .args(["-v", &format!("--name={}", &sandbox.name), "status", "/"])
+        .output()?;
+    assert!(!output.status.success());
+
+    // False value for SANDBOX_IGNORED
+    let output = Command::new("sudo")
+        .env("SANDBOX_IGNORED", "false")
+        .args(["-E", &sandbox.sandbox_bin])
+        .args(["-v", &format!("--name={}", &sandbox.name), "status", "/"])
+        .output()?;
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains(ignored_file.to_str().unwrap()));
+    assert!(stdout.contains(included_file.to_str().unwrap()));
+
+    // Override values for ignored
+    let output = Command::new("sudo")
+        .env("SANDBOX_IGNORED", "false")
+        .args(["-E", &sandbox.sandbox_bin])
+        .args([
+            "-v",
+            "--ignored",
+            &format!("--name={}", &sandbox.name),
+            "status",
+            "/",
+        ])
+        .output()?;
+    assert!(output.status.success());
+    // Both files should be reported because cli takes precedence over env var
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(ignored_file.to_str().unwrap()));
     assert!(stdout.contains(included_file.to_str().unwrap()));
 
