@@ -6,14 +6,16 @@ use rstest::*;
 use std::path::Path;
 use std::process::Command;
 
+// cspell:ignore файл filea fileb filex
+
 #[rstest]
 fn test_gitignore_functionality(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false);  // Don't automatically add --ignored for gitignore tests
-    
+    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+
     // Create test directory using test_filename
     let test_dir = sandbox.test_filename("gitignore-test-dir");
     std::fs::create_dir_all(&test_dir)?;
-    
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -46,7 +48,11 @@ negate-me
     sandbox.run(&[
         "sh",
         "-c",
-        &format!("cat > {} << 'EOF'\n{}EOF", gitignore_path.to_str().unwrap(), gitignore_contents),
+        &format!(
+            "cat > {} << 'EOF'\n{}EOF",
+            gitignore_path.to_str().unwrap(),
+            gitignore_contents
+        ),
     ])?;
 
     // Files that SHOULD be ignored
@@ -58,7 +64,8 @@ negate-me
 
     // Files that should NOT be ignored by /anchored-file rule
     let non_anchored_1 = Path::new(&test_dir).join("nested/anchored-file");
-    let non_anchored_2 = Path::new(&test_dir).join("nested/deeper/anchored-file");
+    let non_anchored_2 =
+        Path::new(&test_dir).join("nested/deeper/anchored-file");
 
     // Files that should NOT be ignored (explicit negations)
     let included_file = Path::new(&test_dir).join("included-file");
@@ -137,8 +144,8 @@ negate-me
 fn test_gitignore_double_asterisk_patterns(
     mut sandbox: SandboxManager,
 ) -> Result<()> {
-    sandbox.set_ignored(false);  // Don't automatically add --ignored for gitignore tests
-    
+    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -147,7 +154,7 @@ fn test_gitignore_double_asterisk_patterns(
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
-    
+
     // Create test directory using test_filename
     let test_dir = sandbox.test_filename("double-asterisk-test");
     std::fs::create_dir_all(&test_dir)?;
@@ -167,7 +174,11 @@ docs/**
     sandbox.run(&[
         "sh",
         "-c",
-        &format!("cat > {} << 'EOF'\n{}EOF", gitignore_path.to_str().unwrap(), gitignore_contents),
+        &format!(
+            "cat > {} << 'EOF'\n{}EOF",
+            gitignore_path.to_str().unwrap(),
+            gitignore_contents
+        ),
     ])?;
 
     // Files that SHOULD be ignored
@@ -199,10 +210,16 @@ docs/**
         "-p",
         Path::new(&test_dir).join("foo").to_str().unwrap(),
         Path::new(&test_dir).join("sub/foo").to_str().unwrap(),
-        Path::new(&test_dir).join("deep/nested/foo").to_str().unwrap(),
+        Path::new(&test_dir)
+            .join("deep/nested/foo")
+            .to_str()
+            .unwrap(),
         Path::new(&test_dir).join("sub/dir").to_str().unwrap(),
         Path::new(&test_dir).join("test").to_str().unwrap(),
-        Path::new(&test_dir).join("sub/test/nested").to_str().unwrap(),
+        Path::new(&test_dir)
+            .join("sub/test/nested")
+            .to_str()
+            .unwrap(),
         Path::new(&test_dir).join("docs/api").to_str().unwrap(),
         Path::new(&test_dir).join("foobar").to_str().unwrap(),
         Path::new(&test_dir).join("sub").to_str().unwrap(),
@@ -219,12 +236,20 @@ docs/**
 
     // Verify included files are shown
     for file in &included_files {
-        assert!(stdout.contains(file.to_str().unwrap()), "Expected {} to be included", file.display());
+        assert!(
+            stdout.contains(file.to_str().unwrap()),
+            "Expected {} to be included",
+            file.display()
+        );
     }
 
     // Verify ignored files are not shown
     for file in &ignored_files {
-        assert!(!stdout.contains(file.to_str().unwrap()), "Expected {} to be ignored", file.display());
+        assert!(
+            !stdout.contains(file.to_str().unwrap()),
+            "Expected {} to be ignored",
+            file.display()
+        );
     }
 
     Ok(())
@@ -232,8 +257,8 @@ docs/**
 
 #[rstest]
 fn test_gitignore_hierarchy(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false);  // Don't automatically add --ignored for gitignore tests
-    
+    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -242,7 +267,7 @@ fn test_gitignore_hierarchy(mut sandbox: SandboxManager) -> Result<()> {
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
-    
+
     // Create test directory using test_filename
     let test_dir = sandbox.test_filename("hierarchy-test");
     std::fs::create_dir_all(Path::new(&test_dir).join("subdir/deep"))?;
@@ -258,7 +283,10 @@ fn test_gitignore_hierarchy(mut sandbox: SandboxManager) -> Result<()> {
     sandbox.run(&[
         "sh",
         "-c",
-        &format!("echo '*.sub\n!important.sub' > {}/subdir/.gitignore", test_dir),
+        &format!(
+            "echo '*.sub\n!important.sub' > {}/subdir/.gitignore",
+            test_dir
+        ),
     ])?;
 
     // Deeper subdirectory
@@ -291,9 +319,17 @@ fn test_gitignore_hierarchy(mut sandbox: SandboxManager) -> Result<()> {
 
     for (file, should_be_ignored) in &test_files {
         if *should_be_ignored {
-            assert!(!stdout.contains(file.to_str().unwrap()), "Expected {} to be ignored", file.display());
+            assert!(
+                !stdout.contains(file.to_str().unwrap()),
+                "Expected {} to be ignored",
+                file.display()
+            );
         } else {
-            assert!(stdout.contains(file.to_str().unwrap()), "Expected {} to be included", file.display());
+            assert!(
+                stdout.contains(file.to_str().unwrap()),
+                "Expected {} to be included",
+                file.display()
+            );
         }
     }
 
@@ -302,8 +338,8 @@ fn test_gitignore_hierarchy(mut sandbox: SandboxManager) -> Result<()> {
 
 #[rstest]
 fn test_gitignore_special_patterns(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false);  // Don't automatically add --ignored for gitignore tests
-    
+    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -312,7 +348,7 @@ fn test_gitignore_special_patterns(mut sandbox: SandboxManager) -> Result<()> {
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
-    
+
     // Create test directory using test_filename
     let test_dir = sandbox.test_filename("special-patterns-test");
     std::fs::create_dir_all(&test_dir)?;
@@ -376,8 +412,22 @@ path\ with\ spaces/
     ];
 
     // Create directories
-    sandbox.run(&["mkdir", "-p", Path::new(&test_dir).join("path with spaces").to_str().unwrap()])?;
-    sandbox.run(&["mkdir", "-p", Path::new(&test_dir).join("path/with/spaces").to_str().unwrap()])?;
+    sandbox.run(&[
+        "mkdir",
+        "-p",
+        Path::new(&test_dir)
+            .join("path with spaces")
+            .to_str()
+            .unwrap(),
+    ])?;
+    sandbox.run(&[
+        "mkdir",
+        "-p",
+        Path::new(&test_dir)
+            .join("path/with/spaces")
+            .to_str()
+            .unwrap(),
+    ])?;
 
     // Create all files
     for file in ignored_files.iter().chain(included_files.iter()) {
@@ -388,11 +438,19 @@ path\ with\ spaces/
     let stdout = sandbox.last_stdout.clone();
 
     for file in &included_files {
-        assert!(stdout.contains(file.to_str().unwrap()), "Expected {} to be included", file.display());
+        assert!(
+            stdout.contains(file.to_str().unwrap()),
+            "Expected {} to be included",
+            file.display()
+        );
     }
 
     for file in &ignored_files {
-        assert!(!stdout.contains(file.to_str().unwrap()), "Expected {} to be ignored", file.display());
+        assert!(
+            !stdout.contains(file.to_str().unwrap()),
+            "Expected {} to be ignored",
+            file.display()
+        );
     }
 
     Ok(())
@@ -402,8 +460,8 @@ path\ with\ spaces/
 fn test_gitignore_directory_patterns(
     mut sandbox: SandboxManager,
 ) -> Result<()> {
-    sandbox.set_ignored(false);  // Don't automatically add --ignored for gitignore tests
-    
+    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -412,7 +470,7 @@ fn test_gitignore_directory_patterns(
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
-    
+
     // Create test directory using test_filename
     let test_dir = sandbox.test_filename("directory-patterns-test");
     std::fs::create_dir_all(&test_dir)?;
@@ -446,7 +504,10 @@ temp
         Path::new(&test_dir).join("src/build").to_str().unwrap(),
         Path::new(&test_dir).join("temp").to_str().unwrap(),
         Path::new(&test_dir).join("node_modules").to_str().unwrap(),
-        Path::new(&test_dir).join("src/node_modules").to_str().unwrap(),
+        Path::new(&test_dir)
+            .join("src/node_modules")
+            .to_str()
+            .unwrap(),
     ])?;
 
     let test_files = vec![
@@ -481,9 +542,17 @@ temp
 
     for (file, should_be_ignored) in &test_files {
         if *should_be_ignored {
-            assert!(!stdout.contains(file.to_str().unwrap()), "Expected {} to be ignored", file.display());
+            assert!(
+                !stdout.contains(file.to_str().unwrap()),
+                "Expected {} to be ignored",
+                file.display()
+            );
         } else {
-            assert!(stdout.contains(file.to_str().unwrap()), "Expected {} to be included", file.display());
+            assert!(
+                stdout.contains(file.to_str().unwrap()),
+                "Expected {} to be included",
+                file.display()
+            );
         }
     }
 
@@ -492,8 +561,8 @@ temp
 
 #[rstest]
 fn test_gitignore_complex_negation(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false);  // Don't automatically add --ignored for gitignore tests
-    
+    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -502,7 +571,7 @@ fn test_gitignore_complex_negation(mut sandbox: SandboxManager) -> Result<()> {
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
-    
+
     // Create test directory using test_filename
     let test_dir = sandbox.test_filename("complex-negation-test");
     std::fs::create_dir_all(&test_dir)?;
@@ -563,9 +632,17 @@ config/*.data.bak
 
     for (file, should_be_ignored) in &test_files {
         if *should_be_ignored {
-            assert!(!stdout.contains(file.to_str().unwrap()), "Expected {} to be ignored", file.display());
+            assert!(
+                !stdout.contains(file.to_str().unwrap()),
+                "Expected {} to be ignored",
+                file.display()
+            );
         } else {
-            assert!(stdout.contains(file.to_str().unwrap()), "Expected {} to be included", file.display());
+            assert!(
+                stdout.contains(file.to_str().unwrap()),
+                "Expected {} to be included",
+                file.display()
+            );
         }
     }
 
@@ -624,9 +701,13 @@ fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
 
     // Invalid value for SANDBOX_IGNORED
     sandbox.set_ignored(false); // Disable automatic --ignored
-    let result = sandbox.run_with_env(&["status", &test_dir], "SANDBOX_IGNORED", "cow");
+    let result =
+        sandbox.run_with_env(&["status", &test_dir], "SANDBOX_IGNORED", "cow");
     sandbox.set_ignored(true); // Reset back
-    assert!(result.is_err(), "Expected error for invalid SANDBOX_IGNORED value");
+    assert!(
+        result.is_err(),
+        "Expected error for invalid SANDBOX_IGNORED value"
+    );
 
     // False value for SANDBOX_IGNORED
     sandbox.set_ignored(false); // Disable automatic --ignored
@@ -663,8 +744,8 @@ fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
 
 #[rstest]
 fn test_builtin_tmp_ignore(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false);  // Don't automatically add --ignored for gitignore tests
-    
+    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+
     let ignored_file = format!("/tmp/builtin-ignore-{}", rid());
 
     sandbox.run(&["touch", &ignored_file])?;
@@ -687,8 +768,8 @@ fn test_builtin_tmp_ignore(mut sandbox: SandboxManager) -> Result<()> {
 
 #[rstest]
 fn test_gitignore_edge_cases(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false);  // Don't automatically add --ignored for gitignore tests
-    
+    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -697,7 +778,7 @@ fn test_gitignore_edge_cases(mut sandbox: SandboxManager) -> Result<()> {
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
-    
+
     // Create test directory using test_filename
     let test_dir = sandbox.test_filename("edge-cases-test");
     std::fs::create_dir_all(&test_dir)?;
@@ -785,9 +866,17 @@ very/long/path/that/goes/on/and/on/and/on/and/on/and/on/and/on/file.txt
 
     for (file, should_be_ignored) in &test_files {
         if *should_be_ignored {
-            assert!(!stdout.contains(file.to_str().unwrap()), "Expected {} to be ignored", file.display());
+            assert!(
+                !stdout.contains(file.to_str().unwrap()),
+                "Expected {} to be ignored",
+                file.display()
+            );
         } else {
-            assert!(stdout.contains(file.to_str().unwrap()), "Expected {} to be included", file.display());
+            assert!(
+                stdout.contains(file.to_str().unwrap()),
+                "Expected {} to be included",
+                file.display()
+            );
         }
     }
 
@@ -796,8 +885,8 @@ very/long/path/that/goes/on/and/on/and/on/and/on/and/on/and/on/file.txt
 
 #[rstest]
 fn test_gitignore_case_sensitivity(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false);  // Don't automatically add --ignored for gitignore tests
-    
+    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -806,7 +895,7 @@ fn test_gitignore_case_sensitivity(mut sandbox: SandboxManager) -> Result<()> {
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
-    
+
     // Create test directory using test_filename
     let test_dir = sandbox.test_filename("case-sensitivity-test");
     std::fs::create_dir_all(&test_dir)?;
@@ -859,9 +948,17 @@ Build/
 
     for (file, should_be_ignored) in &test_files {
         if *should_be_ignored {
-            assert!(!stdout.contains(file.to_str().unwrap()), "Expected {} to be ignored", file.display());
+            assert!(
+                !stdout.contains(file.to_str().unwrap()),
+                "Expected {} to be ignored",
+                file.display()
+            );
         } else {
-            assert!(stdout.contains(file.to_str().unwrap()), "Expected {} to be included", file.display());
+            assert!(
+                stdout.contains(file.to_str().unwrap()),
+                "Expected {} to be included",
+                file.display()
+            );
         }
     }
 
