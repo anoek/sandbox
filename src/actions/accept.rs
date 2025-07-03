@@ -129,6 +129,7 @@ pub fn accept(
     let non_matching_count = all_changes.len() - changes.len();
 
     if !changes.is_empty() {
+        let mut accepted_count = 0;
         for pretend in [true, false] {
             let mut deferred_stage_removals = Vec::new();
 
@@ -143,10 +144,12 @@ pub fn accept(
                     if source.is_file() || source.is_symlink() {
                         if !pretend {
                             rm(&source.path, false)?;
+                            accepted_count += 1;
                         }
                     } else if source.is_dir() {
                         if !pretend {
                             rmdir(&source.path)?;
+                            accepted_count += 1;
                         }
                     } else {
                         return Err(anyhow::anyhow!(
@@ -299,6 +302,7 @@ pub fn accept(
                                     set_permissions(destination, staged)?;
                                     deferred_stage_removals
                                         .push(staged.path.clone());
+                                    accepted_count += 1;
                                 }
                             } else if staged.is_symlink() {
                                 if !pretend {
@@ -319,6 +323,7 @@ pub fn accept(
                                     set_permissions(destination, staged)?;
                                     deferred_stage_removals
                                         .push(staged.path.clone());
+                                    accepted_count += 1;
                                 }
                             } else if staged.is_dir() {
                                 if !pretend {
@@ -330,6 +335,7 @@ pub fn accept(
                                     set_permissions(destination, staged)?;
                                     deferred_stage_removals
                                         .push(staged.path.clone());
+                                    accepted_count += 1;
                                 }
                             } else {
                                 // this should be unreachable as changes should be generating
@@ -366,6 +372,7 @@ pub fn accept(
                                 deferred_stage_removals
                                     .push(staged.path.clone());
                             }
+                            accepted_count += 1;
                         }
                     }
                     EntryOperation::Error(error) => {
@@ -395,6 +402,10 @@ pub fn accept(
                     }
                 }
             }
+        }
+
+        if accepted_count > 0 {
+            outln!("\n{} changes accepted\n", accepted_count);
         }
     } else {
         outln!("\nNo changes in this directory to accept\n");

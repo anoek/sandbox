@@ -14,6 +14,7 @@ fn test_accept_file(mut sandbox: SandboxManager) -> Result<()> {
     sandbox.run(&["touch", &filename])?;
     assert!(!path.exists());
     sandbox.run(&["accept", &filename])?;
+    assert!(sandbox.last_stdout.contains("1 changes accepted"));
     assert!(path.exists());
     std::fs::remove_file(path)?;
     assert!(!path.exists());
