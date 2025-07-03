@@ -47,6 +47,7 @@ pub struct SandboxManager {
     /* we store the sandbox binary path so we can chdir as necessary */
     pub sandbox_bin: String,
     pub no_default_options: bool,
+    pub ignored: bool,  // Controls whether --ignored is automatically added
 }
 
 impl SandboxManager {
@@ -76,6 +77,7 @@ impl SandboxManager {
             no_sudo: false,
             sandbox_bin: get_sandbox_bin(),
             no_default_options: false,
+            ignored: true,  // Default to true to maintain existing behavior
         }
     }
 
@@ -83,6 +85,12 @@ impl SandboxManager {
     #[allow(dead_code)]
     pub fn set_debug_mode(&mut self, debug_mode: bool) {
         self.debug_mode = debug_mode;
+    }
+
+    /* Controls whether --ignored is automatically added to commands */
+    #[allow(dead_code)]
+    pub fn set_ignored(&mut self, ignored: bool) {
+        self.ignored = ignored;
     }
 
     #[allow(dead_code)]
@@ -147,7 +155,9 @@ impl SandboxManager {
             cmd.args(["-v"]);
         }
 
-        cmd.args(["--ignored"]);
+        if self.ignored {
+            cmd.args(["--ignored"]);
+        }
 
         if !self.no_default_options
             && !args.iter().any(|arg| arg.starts_with("--name"))

@@ -113,7 +113,11 @@ pub enum Action {
     },
 
     /// Show changes in the sandbox relative to the current changes
-    Diff,
+    Diff {
+        /// Patterns of files to diff
+        #[arg(value_name = "PATTERNS", num_args = 0..)]
+        patterns: Option<Vec<String>>,
+    },
 
     /// Discard changes in the sandbox
     Discard {
