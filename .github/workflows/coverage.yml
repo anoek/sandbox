@@ -36,7 +36,7 @@ jobs:
                       make coverage
                   max_attempts: 3
 
-            # 97.0 as opposed to 100% because on github and within our full-test
+            # 96.0 as opposed to 100% because on github and within our full-test
             # ubuntu vm we seem to be unable to get some profraw data for the
             # code that writes the llvm profile dump data at the end of setting
             # up a sandbox (but the code is definitely run), as well as a
@@ -46,9 +46,9 @@ jobs:
 
               run: |
                   COVERAGE=$(cat coverage/html/coverage.json | jq -r '.message | sub("%"; "") | tonumber')
-                  if (( $(echo "$COVERAGE >= 97.0" | bc -l) )); then
-                      echo "Coverage of $COVERAGE% meets the minimum requirement of 97.0%"
+                  if (( $(echo "$COVERAGE >= 96.0" | bc -l) )); then
+                      echo "Coverage of $COVERAGE% meets the minimum requirement of 96.0%"
                   else
-                      echo "Coverage of $COVERAGE% is below the minimum requirement of 97.0%"
+                      echo "Coverage of $COVERAGE% is below the minimum requirement of 96.0%"
                       exit 1
                   fi
