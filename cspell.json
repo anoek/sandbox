@@ -33,6 +33,7 @@
         "CREAT",
         "cstring",
         "czvf",
+        "dbus",
         "devpts",
         "diffutils",
         "domifaddr",

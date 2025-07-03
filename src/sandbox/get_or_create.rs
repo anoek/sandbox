@@ -14,7 +14,7 @@ use crate::util::{
 };
 use anyhow::Context;
 use anyhow::{Result, anyhow};
-use log::{error, trace};
+use log::{error, trace, warn};
 use nix::sys::stat::FchmodatFlags;
 use nix::sys::stat::fchmodat;
 use nix::{
@@ -347,7 +347,7 @@ impl Sandbox {
             old_root_host_path.display()
         ))?;
 
-        /* We prepare /dev here so that we can bind /dev/fuse if we need to.
+        /* Prepare /dev here so that we can bind /dev/fuse if we need to.
          * This needs to happen before we pivot_root. */
         let new_root_dev = new_root.join("dev");
         mount(
@@ -358,7 +358,7 @@ impl Sandbox {
             Some(format!("mode=0755,size={}", TMPFS_SIZE)),
         )?;
 
-        /* Part of of binding /dev/fuse if we have it enabled */
+        /* Bind /dev/fuse if we have it enabled */
         if config.bind_fuse && Path::new("/dev/fuse").exists() {
             let new_root_dev_fuse = new_root.join("dev").join("fuse");
             std::fs::write(&new_root_dev_fuse, "").context(format!(
@@ -376,6 +376,100 @@ impl Sandbox {
                 "failed to bind /dev/fuse to {}",
                 new_root_dev_fuse.display()
             ))?;
+        }
+
+        /* Prepare /run here so that we can bind /run/dbus if we need to.
+         * This needs to happen before we pivot_root. */
+        let new_root_run = new_root.join("run");
+        mount(
+            Some("none"),
+            new_root_run.clone(),
+            Some("tmpfs"),
+            MsFlags::MS_NOSUID,
+            Some(format!("mode=0755,size={}", TMPFS_SIZE)),
+        )?;
+
+        /* Bind D-Bus sockets if using host networking */
+        if matches!(config.net, Network::Host) {
+            if Path::new("/run/dbus").exists() {
+                trace!("Binding system bus");
+                let new_root_run_dbus = new_root_run.join("dbus");
+
+                mkdir(
+                    &new_root_run_dbus,
+                    nix::unistd::Uid::from_raw(0),
+                    nix::unistd::Gid::from_raw(0),
+                )?;
+
+                mount(
+                    Some("/run/dbus"),
+                    &new_root_run_dbus,
+                    Some("bind"),
+                    MsFlags::MS_BIND,
+                    null,
+                )
+                .context(format!(
+                    "failed to bind mount /run/dbus to {}",
+                    new_root_run_dbus.display()
+                ))?;
+            }
+
+            /*
+            if let Some(xdg_runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") {
+                trace!(
+                    "Binding user bus: {}",
+                    xdg_runtime_dir.to_string_lossy()
+                );
+                let user_bus = PathBuf::from(format!(
+                    "{}/bus",
+                    xdg_runtime_dir.to_string_lossy()
+                ));
+                if user_bus.exists() {
+                    let xdg_runtime_path = Path::new(&xdg_runtime_dir);
+                    let new_root_xdg_runtime = new_root.join(
+                        xdg_runtime_path
+                            .strip_prefix("/")
+                            .unwrap_or(xdg_runtime_path),
+                    );
+                    let new_root_user_bus = new_root_xdg_runtime.join("bus");
+
+                    warn!(
+                        "new_root_xdg_runtime: {}",
+                        new_root_xdg_runtime.display()
+                    );
+                    // Create parent directory of XDG_RUNTIME_DIR (e.g., /run/user) owned by root
+                    if let Some(parent) = new_root_xdg_runtime.parent() {
+                        trace!("Creating: {}", parent.display());
+                        mkdir(
+                            &PathBuf::from(parent),
+                            nix::unistd::Uid::from_raw(0),
+                            nix::unistd::Gid::from_raw(0),
+                        )?;
+                    }
+
+                    // Create XDG_RUNTIME_DIR (e.g., /run/user/1000) owned by user
+                    trace!("Creating: {}", new_root_xdg_runtime.display());
+                    mkdir(&new_root_xdg_runtime, self.uid, self.gid)?;
+
+                    // Create bus directory owned by user
+                    trace!("Creating: {}", new_root_user_bus.display());
+                    mkdir(&new_root_user_bus, self.uid, self.gid)?;
+
+                    mount(
+                        Some(&user_bus),
+                        &new_root_user_bus,
+                        Some("bind"),
+                        MsFlags::MS_BIND,
+                        null,
+                    )
+                    .context(format!(
+                        "failed to bind mount {} to {}",
+                        user_bus.display(),
+                        new_root_user_bus.display()
+                    ))?;
+                }
+            }
+            */
         }
 
         /* Pivot (similar to chroot in effect) */

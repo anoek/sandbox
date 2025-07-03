@@ -395,6 +395,10 @@ fn merge_configs(
         base.ignored = Some(ignored);
         sources.insert("ignored".into(), source.into());
     }
+    if let Some(bind_fuse) = override_config.bind_fuse {
+        base.bind_fuse = Some(bind_fuse);
+        sources.insert("bind_fuse".into(), source.into());
+    }
 }
 
 #[cfg(test)]
