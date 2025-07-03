@@ -378,8 +378,8 @@ impl Sandbox {
             ))?;
         }
 
-        /* Prepare /run here so that we can bind /run/dbus if we need to.
-         * This needs to happen before we pivot_root. */
+        /* Prepare /run here so that we can bind /run/dbus and /run/systemd if we need to. This
+         * needs to happen before we pivot_root. */
         let new_root_run = new_root.join("run");
         mount(
             Some("none"),
@@ -414,62 +414,28 @@ impl Sandbox {
                 ))?;
             }
 
-            /*
-            if let Some(xdg_runtime_dir) = std::env::var_os("XDG_RUNTIME_DIR") {
-                trace!(
-                    "Binding user bus: {}",
-                    xdg_runtime_dir.to_string_lossy()
-                );
-                let user_bus = PathBuf::from(format!(
-                    "{}/bus",
-                    xdg_runtime_dir.to_string_lossy()
-                ));
-                if user_bus.exists() {
-                    let xdg_runtime_path = Path::new(&xdg_runtime_dir);
-                    let new_root_xdg_runtime = new_root.join(
-                        xdg_runtime_path
-                            .strip_prefix("/")
-                            .unwrap_or(xdg_runtime_path),
-                    );
-                    let new_root_user_bus = new_root_xdg_runtime.join("bus");
+            if Path::new("/run/systemd").exists() {
+                trace!("Binding systemd");
+                let new_root_run_systemd = new_root_run.join("systemd");
 
-                    warn!(
-                        "new_root_xdg_runtime: {}",
-                        new_root_xdg_runtime.display()
-                    );
-                    // Create parent directory of XDG_RUNTIME_DIR (e.g., /run/user) owned by root
-                    if let Some(parent) = new_root_xdg_runtime.parent() {
-                        trace!("Creating: {}", parent.display());
-                        mkdir(
-                            &PathBuf::from(parent),
-                            nix::unistd::Uid::from_raw(0),
-                            nix::unistd::Gid::from_raw(0),
-                        )?;
-                    }
+                mkdir(
+                    &new_root_run_systemd,
+                    nix::unistd::Uid::from_raw(0),
+                    nix::unistd::Gid::from_raw(0),
+                )?;
 
-                    // Create XDG_RUNTIME_DIR (e.g., /run/user/1000) owned by user
-                    trace!("Creating: {}", new_root_xdg_runtime.display());
-                    mkdir(&new_root_xdg_runtime, self.uid, self.gid)?;
-
-                    // Create bus directory owned by user
-                    trace!("Creating: {}", new_root_user_bus.display());
-                    mkdir(&new_root_user_bus, self.uid, self.gid)?;
-
-                    mount(
-                        Some(&user_bus),
-                        &new_root_user_bus,
-                        Some("bind"),
-                        MsFlags::MS_BIND,
-                        null,
-                    )
-                    .context(format!(
-                        "failed to bind mount {} to {}",
-                        user_bus.display(),
-                        new_root_user_bus.display()
-                    ))?;
-                }
+                mount(
+                    Some("/run/systemd"),
+                    &new_root_run_systemd,
+                    Some("bind"),
+                    MsFlags::MS_BIND | MsFlags::MS_NOSUID | MsFlags::MS_RDONLY,
+                    null,
+                )
+                .context(format!(
+                    "failed to bind mount /run/systemd to {}",
+                    new_root_run_systemd.display()
+                ))?;
             }
-            */
         }
 
         /* Pivot (similar to chroot in effect) */
