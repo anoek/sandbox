@@ -390,52 +390,54 @@ impl Sandbox {
         )?;
 
         /* Bind D-Bus sockets if using host networking */
-        if matches!(config.net, Network::Host) {
-            if Path::new("/run/dbus").exists() {
-                trace!("Binding system bus");
-                let new_root_run_dbus = new_root_run.join("dbus");
+        if matches!(config.net, Network::Host)
+            && Path::new("/run/dbus").exists()
+        {
+            trace!("Binding system bus");
+            let new_root_run_dbus = new_root_run.join("dbus");
 
-                mkdir(
-                    &new_root_run_dbus,
-                    nix::unistd::Uid::from_raw(0),
-                    nix::unistd::Gid::from_raw(0),
-                )?;
+            mkdir(
+                &new_root_run_dbus,
+                nix::unistd::Uid::from_raw(0),
+                nix::unistd::Gid::from_raw(0),
+            )?;
 
-                mount(
-                    Some("/run/dbus"),
-                    &new_root_run_dbus,
-                    Some("bind"),
-                    MsFlags::MS_BIND,
-                    null,
-                )
-                .context(format!(
-                    "failed to bind mount /run/dbus to {}",
-                    new_root_run_dbus.display()
-                ))?;
-            }
+            mount(
+                Some("/run/dbus"),
+                &new_root_run_dbus,
+                Some("bind"),
+                MsFlags::MS_BIND,
+                null,
+            )
+            .context(format!(
+                "failed to bind mount /run/dbus to {}",
+                new_root_run_dbus.display()
+            ))?;
+        }
 
-            if Path::new("/run/systemd").exists() {
-                trace!("Binding systemd");
-                let new_root_run_systemd = new_root_run.join("systemd");
+        if matches!(config.net, Network::Host)
+            && Path::new("/run/systemd").exists()
+        {
+            trace!("Binding systemd");
+            let new_root_run_systemd = new_root_run.join("systemd");
 
-                mkdir(
-                    &new_root_run_systemd,
-                    nix::unistd::Uid::from_raw(0),
-                    nix::unistd::Gid::from_raw(0),
-                )?;
+            mkdir(
+                &new_root_run_systemd,
+                nix::unistd::Uid::from_raw(0),
+                nix::unistd::Gid::from_raw(0),
+            )?;
 
-                mount(
-                    Some("/run/systemd"),
-                    &new_root_run_systemd,
-                    Some("bind"),
-                    MsFlags::MS_BIND | MsFlags::MS_NOSUID | MsFlags::MS_RDONLY,
-                    null,
-                )
-                .context(format!(
-                    "failed to bind mount /run/systemd to {}",
-                    new_root_run_systemd.display()
-                ))?;
-            }
+            mount(
+                Some("/run/systemd"),
+                &new_root_run_systemd,
+                Some("bind"),
+                MsFlags::MS_BIND | MsFlags::MS_NOSUID | MsFlags::MS_RDONLY,
+                null,
+            )
+            .context(format!(
+                "failed to bind mount /run/systemd to {}",
+                new_root_run_systemd.display()
+            ))?;
         }
 
         /* Pivot (similar to chroot in effect) */
