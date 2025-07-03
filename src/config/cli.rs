@@ -119,8 +119,8 @@ pub enum Action {
         patterns: Option<Vec<String>>,
     },
 
-    /// Discard changes in the sandbox
-    Discard {
+    /// Reject changes in the sandbox
+    Reject {
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,
     },
@@ -136,7 +136,7 @@ pub enum Action {
     Sync,
 
     /// Kill all processes in the sandbox and unmount the filesystems.
-    /// Note this will not discard any changes.
+    /// Note this will not reject any changes.
     Stop {
         /// Kill all sandboxes
         #[arg(long)]

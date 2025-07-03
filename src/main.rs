@@ -132,7 +132,7 @@ pub fn main() -> Result<()> {
                 &sandbox,
                 &patterns.unwrap_or_default(),
             ),
-            cli::Action::Discard { patterns } => actions::discard(
+            cli::Action::Reject { patterns } => actions::reject(
                 &config,
                 &sandbox,
                 &patterns.unwrap_or_default(),

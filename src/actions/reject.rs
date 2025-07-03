@@ -7,12 +7,12 @@ use crate::{
 use anyhow::{Context, Result};
 use log::{debug, trace};
 
-pub fn discard(
+pub fn reject(
     config: &Config,
     sandbox: &Sandbox,
     patterns: &[String],
 ) -> Result<()> {
-    trace!("Discarding changes from sandbox {}", sandbox.name);
+    trace!("Rejecting changes from sandbox {}", sandbox.name);
 
     let cwd = std::env::current_dir()?;
     let changes = sandbox.changes(config)?;
@@ -33,7 +33,7 @@ pub fn discard(
 
             last_staged_path = Some(staged.path.clone());
 
-            debug!("Discarding {}", staged.path.display());
+            debug!("Rejecting {}", staged.path.display());
             if staged.is_dir() {
                 std::fs::remove_dir(&staged.path).context(format!(
                     "Failed to remove directory {}",
@@ -50,7 +50,7 @@ pub fn discard(
 
     sync_and_drop_caches()?;
 
-    outln!("Discarded {} changes", changes.len());
+    outln!("Rejected {} changes", changes.len());
 
     Ok(())
 }
