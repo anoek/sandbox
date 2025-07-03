@@ -119,14 +119,14 @@ pub enum Action {
         patterns: Option<Vec<String>>,
     },
 
-    /// Reject changes in the sandbox
-    Reject {
+    /// Accept changes in the sandbox
+    Accept {
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,
     },
 
-    /// Accept changes in the sandbox
-    Accept {
+    /// Reject changes in the sandbox
+    Reject {
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,
     },
