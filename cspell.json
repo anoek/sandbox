@@ -120,6 +120,7 @@
         "manmanual",
         "mansource",
         "metacopy",
+        "mkfifo",
         "mklabel",
         "mknod",
         "mkpart",

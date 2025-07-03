@@ -335,10 +335,10 @@ impl Sandbox {
         .context("old_root_host creation error")?;
         let old_root_host_cstr = old_root_host.as_c_str();
 
-        #[cfg(feature = "coverage")]
         if std::env::var_os("TEST_CREATE_OLD_ROOT_HOST_PATH_FAILURE").is_some()
         {
-            // simulate a failure because somehow the path already exists
+            // simulate a failure by pre-creating the directory so the real
+            // creation below fails (exercising the error branch for tests).
             std::fs::create_dir(&old_root_host_path)?;
         }
 

@@ -387,8 +387,56 @@ fn merge_configs(
         base.net = Some(net);
         sources.insert("net".into(), source.into());
     }
+    if let Some(bind_fuse) = override_config.bind_fuse {
+        base.bind_fuse = Some(bind_fuse);
+        sources.insert("bind_fuse".into(), source.into());
+    }
     if let Some(ignored) = override_config.ignored {
         base.ignored = Some(ignored);
         sources.insert("ignored".into(), source.into());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Network;
+    use log::LevelFilter;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_merge_configs() {
+        let mut base = PartialConfig::default();
+        let mut sources = HashMap::new();
+
+        let override_config = PartialConfig {
+            log_level: Some(LevelFilter::Debug),
+            name: Some("test-sandbox".to_string()),
+            storage_dir: Some("/tmp/test".to_string()),
+            net: Some(Network::Host),
+            bind_fuse: Some(false),
+            ignored: Some(true),
+        };
+
+        merge_configs(&mut base, &mut sources, override_config, "test-config");
+
+        // Verify all fields were merged
+        assert_eq!(base.log_level, Some(LevelFilter::Debug));
+        assert_eq!(base.name, Some("test-sandbox".to_string()));
+        assert_eq!(base.storage_dir, Some("/tmp/test".to_string()));
+        assert!(matches!(base.net, Some(Network::Host)));
+        assert_eq!(base.bind_fuse, Some(false));
+        assert_eq!(base.ignored, Some(true));
+
+        // Verify sources tracking
+        assert_eq!(sources.get("log_level"), Some(&"test-config".to_string()));
+        assert_eq!(sources.get("name"), Some(&"test-config".to_string()));
+        assert_eq!(
+            sources.get("storage_dir"),
+            Some(&"test-config".to_string())
+        );
+        assert_eq!(sources.get("net"), Some(&"test-config".to_string()));
+        assert_eq!(sources.get("bind_fuse"), Some(&"test-config".to_string()));
+        assert_eq!(sources.get("ignored"), Some(&"test-config".to_string()));
     }
 }
