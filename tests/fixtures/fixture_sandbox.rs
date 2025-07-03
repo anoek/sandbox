@@ -47,7 +47,7 @@ pub struct SandboxManager {
     /* we store the sandbox binary path so we can chdir as necessary */
     pub sandbox_bin: String,
     pub no_default_options: bool,
-    pub ignored: bool,  // Controls whether --ignored is automatically added
+    pub ignored: bool, // Controls whether --ignored is automatically added
 }
 
 impl SandboxManager {
@@ -77,7 +77,7 @@ impl SandboxManager {
             no_sudo: false,
             sandbox_bin: get_sandbox_bin(),
             no_default_options: false,
-            ignored: true,  // Default to true to maintain existing behavior
+            ignored: true, // Default to true to maintain existing behavior
         }
     }
 
@@ -290,7 +290,7 @@ impl Drop for SandboxManager {
             error!("last_stdout: {}", self.last_stdout);
             return;
         }
-        if let Err(e) = self.run(&["accept", "*.profraw"]) {
+        if let Err(e) = self.run(&["accept", "**/*.profraw"]) {
             error!("Failed to accept profraw files: {}", e);
             error!("last_stderr: {}", self.last_stderr);
             error!("last_stdout: {}", self.last_stdout);
