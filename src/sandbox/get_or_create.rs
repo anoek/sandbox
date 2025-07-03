@@ -347,7 +347,7 @@ impl Sandbox {
             old_root_host_path.display()
         ))?;
 
-        /* We prepare /dev here so that we can bind /dev/fuse if we need to.
+        /* Prepare /dev here so that we can bind /dev/fuse if we need to.
          * This needs to happen before we pivot_root. */
         let new_root_dev = new_root.join("dev");
         mount(
@@ -358,7 +358,7 @@ impl Sandbox {
             Some(format!("mode=0755,size={}", TMPFS_SIZE)),
         )?;
 
-        /* Part of of binding /dev/fuse if we have it enabled */
+        /* Bind /dev/fuse if we have it enabled */
         if config.bind_fuse && Path::new("/dev/fuse").exists() {
             let new_root_dev_fuse = new_root.join("dev").join("fuse");
             std::fs::write(&new_root_dev_fuse, "").context(format!(
@@ -375,6 +375,68 @@ impl Sandbox {
             .context(format!(
                 "failed to bind /dev/fuse to {}",
                 new_root_dev_fuse.display()
+            ))?;
+        }
+
+        /* Prepare /run here so that we can bind /run/dbus and /run/systemd if we need to. This
+         * needs to happen before we pivot_root. */
+        let new_root_run = new_root.join("run");
+        mount(
+            Some("none"),
+            new_root_run.clone(),
+            Some("tmpfs"),
+            MsFlags::MS_NOSUID,
+            Some(format!("mode=0755,size={}", TMPFS_SIZE)),
+        )?;
+
+        /* Bind D-Bus sockets if using host networking */
+        if matches!(config.net, Network::Host)
+            && Path::new("/run/dbus").exists()
+        {
+            trace!("Binding system bus");
+            let new_root_run_dbus = new_root_run.join("dbus");
+
+            mkdir(
+                &new_root_run_dbus,
+                nix::unistd::Uid::from_raw(0),
+                nix::unistd::Gid::from_raw(0),
+            )?;
+
+            mount(
+                Some("/run/dbus"),
+                &new_root_run_dbus,
+                Some("bind"),
+                MsFlags::MS_BIND,
+                null,
+            )
+            .context(format!(
+                "failed to bind mount /run/dbus to {}",
+                new_root_run_dbus.display()
+            ))?;
+        }
+
+        if matches!(config.net, Network::Host)
+            && Path::new("/run/systemd").exists()
+        {
+            trace!("Binding systemd");
+            let new_root_run_systemd = new_root_run.join("systemd");
+
+            mkdir(
+                &new_root_run_systemd,
+                nix::unistd::Uid::from_raw(0),
+                nix::unistd::Gid::from_raw(0),
+            )?;
+
+            mount(
+                Some("/run/systemd"),
+                &new_root_run_systemd,
+                Some("bind"),
+                MsFlags::MS_BIND | MsFlags::MS_NOSUID | MsFlags::MS_RDONLY,
+                null,
+            )
+            .context(format!(
+                "failed to bind mount /run/systemd to {}",
+                new_root_run_systemd.display()
             ))?;
         }
 
