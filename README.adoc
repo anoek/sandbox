@@ -30,11 +30,11 @@ semi-trusted programs—such as AI agents, app images, or shell installers—in 
 environment that mirrors your host computer, while preventing them from
 modifying your system. It can also be useful during development and testing for
 doing things like testing migrations or file reorganizations as it lets you run
-your code, examine the changes, discard the changes and try again rapidly.
+your code, examine the changes, reject the changes and try again rapidly.
 
 If you're satisfied with the outcome of your semi-trusted program, you can use the
 `sandbox` tool to selectively accept some or all of the changes made to your
-files. If you're not satisfied, you can simply discard the changes.
+files. If you're not satisfied, you can simply reject the changes.
 
 Changes made within sandboxes are easily browsable and persist until you remove
 them, allowing you to reuse the same sandbox for as long as needed and by as many
@@ -121,8 +121,8 @@ patterns. Use `status /` to show status of all files in the sandbox.
 `diff`::
 Show changes in the sandbox relative to the current changes
 
-`discard [PATTERN]`::
-Discard changes in the sandbox. This works relative to your current working directory only, and changes outside of your working directory are ignored.
+`reject [PATTERN]`::
+Reject changes in the sandbox. This works relative to your current working directory only, and changes outside of your working directory are ignored.
 
 `accept [PATTERN]`::
 Accept changes in the sandbox. This works relative to your current working directory only, and changes outside of your working directory are ignored.
@@ -131,7 +131,7 @@ Accept changes in the sandbox. This works relative to your current working direc
 Synchronize changes that might have occurred in your host file system so that they are reflected in running sandboxes. Note, this performs a system wide filesystem sync and flushes all caches.
 
 `stop [--all]`::
-Kill all processes in the sandbox and unmount the filesystems. Note this will not discard any changes
+Kill all processes in the sandbox and unmount the filesystems. Note this will not reject any changes
 
 `help`::
 Print this message or the help of the given subcommand(s)
@@ -164,6 +164,9 @@ Formats action output as a JSON blob. Does nothing for sandboxed commands
 
 `--no-config`::
 Do not load config files. Environment variables will still be used.
+
+`--ignored`::
+Show files that would normally be filtered out by ignore rules.
 
 `-h, --help`::
 Print help
@@ -253,7 +256,7 @@ with a sandbox is to start your sandbox, do whatever you want to do within
 your sandbox, stop the sandbox, and then accept or reject your changes.
 
 That said it is often convenient to ignore this and make changes to the
-files on the host system, or to do things like accept or discard changes in
+files on the host system, or to do things like accept or reject changes in
 a running sandbox (which makes changes to the "upper" file system). In practice
 this generally works as expected, the primary risk you run
 is seeing stale or cached data within the sandbox if you choose to do this.
