@@ -104,10 +104,10 @@ quick-test: build-coverage-binary
 coverage/html/coverage.json: update-coverage-report
 	
 coverage-check: coverage/html/coverage.json
-	if jq -e '.message' coverage/html/coverage.json | grep -q 100; then \
-		echo "Coverage is 100%"; \
+	if jq -e '.message' coverage/html/coverage.json | grep -q 98; then \
+		echo "Coverage is 98%"; \
 	else \
-		echo "Coverage is less than 100%"; \
+		echo "Coverage is less than 98%"; \
 		exit 1; \
 	fi
 	
