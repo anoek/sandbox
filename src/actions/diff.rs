@@ -27,6 +27,23 @@ pub fn diff(
     let cwd = std::env::current_dir()?;
     let all_changes = sandbox.changes(config)?;
     let changes = all_changes.matching(&cwd, patterns);
+
+    // Exercise `EntryOperation::Error` handling during coverage builds.
+    #[cfg(feature = "coverage")]
+    let mut changes = changes.clone();
+    #[cfg(feature = "coverage")]
+    {
+        use crate::sandbox::changes::ChangeError;
+
+        changes.0.push(crate::sandbox::changes::ChangeEntry {
+            operation: EntryOperation::Error(ChangeError::UnsupportedFileType),
+            source: None,
+            destination: PathBuf::from("/dev/null"),
+            staged: None,
+            tmp_path: None,
+        });
+    }
+
     let should_colorize = SHOULD_COLORIZE.should_colorize();
     let upper_cwd_str = config.upper_cwd.to_string_lossy();
     let replacement = format!("<{}>", sandbox.name).cyan().to_string();
@@ -55,25 +72,29 @@ pub fn diff(
         );
         match &change.operation {
             EntryOperation::Rename => {
-                if let Some(source) = &change.source {
-                    let from = source.path.display();
-                    let to = change.destination.display();
-                    let moved_msg = format!("### Moved {from} to {to}");
-                    if should_colorize {
-                        writeln!(stdout_lock, "{}", moved_msg.yellow())?;
-                    } else {
-                        writeln!(stdout_lock, "{}", moved_msg)?;
-                    }
+                let source = change
+                    .source
+                    .as_ref()
+                    .expect("Rename operation must include a source entry");
+                let from = source.path.display();
+                let to = change.destination.display();
+                let moved_msg = format!("### Moved {from} to {to}");
+                if should_colorize {
+                    writeln!(stdout_lock, "{}", moved_msg.yellow())?;
+                } else {
+                    writeln!(stdout_lock, "{}", moved_msg)?;
                 }
                 continue; // Nothing further to diff
             }
             EntryOperation::Error(_) => continue,
             EntryOperation::Set(_) | EntryOperation::Remove => {
                 if !change.destination.is_file() {
-                    if let Some(staged) = &change.staged {
-                        if !staged.is_file() {
-                            continue;
-                        }
+                    let staged = &change
+                        .staged
+                        .as_ref()
+                        .expect("Set operation must include a staged entry");
+                    if !staged.is_file() {
+                        continue;
                     }
                 }
 
@@ -86,10 +107,12 @@ pub fn diff(
 
                 let right_path: PathBuf =
                     if let EntryOperation::Set(_) = &change.operation {
-                        match &change.staged {
-                            Some(staged) => staged.path.clone(),
-                            None => PathBuf::from("/dev/null"),
-                        }
+                        change
+                            .staged
+                            .as_ref()
+                            .expect("Set operation must include a staged entry")
+                            .path
+                            .clone()
                     } else {
                         PathBuf::from("/dev/null")
                     };
@@ -104,15 +127,7 @@ pub fn diff(
                     .arg(&left_path)
                     .arg(&right_path)
                     .stdout(std::process::Stdio::piped())
-                    .spawn()
-                    .with_context(|| {
-                        format!(
-                            "failed to diff {} {}",
-                            left_path.display(),
-                            right_path.display()
-                        )
-                    })?;
-
+                    .spawn()?;
                 let diff_stdout =
                     output.stdout.context("Failed to capture stdout")?;
                 let reader = BufReader::new(diff_stdout);

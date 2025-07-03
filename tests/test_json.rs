@@ -25,3 +25,13 @@ fn test_json(mut sandbox: SandboxManager) -> Result<()> {
 
     Ok(())
 }
+
+/* This exists to exercise the json error path in main.rs. If we ever
+ * support json diff output that would be great but we'll have to figure
+ * out another way to exercise that code. */
+#[rstest]
+fn test_json_diff(mut sandbox: SandboxManager) -> Result<()> {
+    sandbox.xfail(&["--json", "diff"]);
+    assert!(sandbox.last_stdout.contains("\"status\": \"error\""));
+    Ok(())
+}
