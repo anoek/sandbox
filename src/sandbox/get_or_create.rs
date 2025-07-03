@@ -14,7 +14,7 @@ use crate::util::{
 };
 use anyhow::Context;
 use anyhow::{Result, anyhow};
-use log::{error, trace, warn};
+use log::{error, trace};
 use nix::sys::stat::FchmodatFlags;
 use nix::sys::stat::fchmodat;
 use nix::{
