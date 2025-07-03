@@ -1,10 +1,10 @@
 use crate::config::Config;
-use crate::sandbox::changes::*;
-
 use crate::sandbox::Sandbox;
+use crate::sandbox::changes::*;
 use crate::util::find_mount_point;
 use anyhow::Context;
 use anyhow::Result;
+use log::debug;
 use log::error;
 use log::info;
 use nix::NixPath;
@@ -258,7 +258,12 @@ impl Sandbox {
 
             /* Check if we should ignore this based on ignore rules and files */
             if !include_ignored
-                && self.is_ignored(&lower_path, path, &mut resolved_ignores)
+                && self.is_ignored(
+                    &base_decoded,
+                    &lower_path,
+                    path,
+                    &mut resolved_ignores,
+                )
             {
                 continue;
             }
@@ -299,67 +304,70 @@ impl Sandbox {
 
     /* This function will check if a path is ignored based on the ignore rules and files.
      *
-     * We're trying to follow the spirit of gitignore rules in which we look for ignore
-     * files in parent directories and apply all the rules in them first, all the way
-     * up to our current directory, last matching rule wins. We resolve these files within
-     * the overlay merged view.
-     *
-     * Presently we only go up to the mount point of the path. This should probably be expanded
-     * to look at all of the ancestors mounts in the future.
+     * We're trying to follow the spirit of gitignore rules in which we look for ignore files in
+     * parent directories and apply all the rules in them first, all the way up to our current
+     * directory, last matching rule wins.
      * */
     fn is_ignored(
         &self,
+        base_decoded: &str,
         lower_path: &Path,
-        overlay_path: &Path,
+        upper_relative_path: &Path,
         resolved_ignores: &mut HashMap<PathBuf, Vec<IgnorePattern>>,
     ) -> bool {
-        let mut base = self.overlay_base.clone();
         let mut ignored = false;
-        let mut paths_to_check: Vec<(PathBuf, PathBuf)> = vec![];
 
-        let lower_path = lower_path
+        let lower_path_str = lower_path
             .to_str()
             .expect("lower_path should have a string representation");
 
+        // Check built-in patterns first
         for pattern in BUILT_IN_IGNORE_PATTERNS {
-            if fast_glob::glob_match(pattern, lower_path) {
+            if fast_glob::glob_match(pattern, lower_path_str) {
                 return true;
             }
         }
 
-        let components: Vec<_> = overlay_path
-            .components()
-            .map(|c| c.as_os_str().to_owned())
-            .collect();
+        // Get the base32 encoded root component from upper_relative_path
+        let mut upper_components = upper_relative_path.components();
+        let upper_base32_root =
+            upper_components.next().map(|c| c.as_os_str().to_owned());
 
-        for i in 0..components.len() {
-            base.push(&components[i]);
-
-            // Build the relative path from the remaining components
-            let relative_components = &components[i + 1..];
-            let relative_path = relative_components.iter().collect::<PathBuf>();
-
-            paths_to_check.push((base.clone(), relative_path));
+        // Build list of parent directories to check for ignore files
+        let mut current_lower_dir = PathBuf::from(base_decoded);
+        let mut current_upper_dir = self.upper_base.clone();
+        if let Some(ref base32) = upper_base32_root {
+            current_upper_dir.push(base32);
         }
 
-        for (path, relative_path) in paths_to_check {
-            let patterns = resolved_ignores
-                .entry(path.clone())
-                .or_insert_with(|| resolve_ignores(&path));
+        // Walk through each component of the path
+        let lower_components: Vec<_> = lower_path
+            .strip_prefix(&current_lower_dir)
+            .expect("lower_path should be a prefix of current_lower_dir")
+            .components()
+            .collect();
 
+        for (i, component) in lower_components.iter().enumerate() {
+            current_lower_dir.push(component);
+            current_upper_dir.push(component);
+
+            // Build the relative path from this directory to our target
+            let relative_path: PathBuf =
+                lower_components[i + 1..].iter().collect();
+            let relative_str = relative_path.to_str().unwrap_or("");
+
+            // Check if we have cached patterns for this directory
+            let patterns = resolved_ignores
+                .entry(current_lower_dir.clone())
+                .or_insert_with(|| {
+                    resolve_ignores(&current_upper_dir, &current_lower_dir)
+                });
+
+            // Check if any pattern matches
             for pattern in patterns {
-                if fast_glob::glob_match(
-                    &pattern.pattern,
-                    relative_path
-                        .to_str()
-                        .expect("path should have a string representation"),
-                ) {
+                if fast_glob::glob_match(&pattern.pattern, relative_str) {
                     ignored = !pattern.negate;
                 }
-            }
-
-            if ignored {
-                return ignored;
             }
         }
 
@@ -367,63 +375,96 @@ impl Sandbox {
     }
 }
 
-/* This function will look for .gitignore and .ignore files in the directories
- * passed and will a list of patterns for all of them combined. */
-fn resolve_ignores(dir: &Path) -> Vec<IgnorePattern> {
+/* Resolve ignore patterns from the upper and lower directories, with files in
+ * upper_dir taking precedence over files in lower_dir. */
+fn resolve_ignores(upper_dir: &Path, lower_dir: &Path) -> Vec<IgnorePattern> {
     let mut patterns: Vec<IgnorePattern> = Vec::new();
 
     for ignore_file in &[".gitignore", ".ignore"] {
-        let file_path = dir.join(ignore_file);
-        if let Ok(content) = std::fs::read_to_string(&file_path) {
-            for line in content.lines() {
-                let mut trimmed = line.trim().to_string();
-                if trimmed.is_empty() || trimmed.starts_with('#') {
-                    continue;
-                }
-                let mut negate = false;
-
-                if trimmed.starts_with("!") {
-                    trimmed = trimmed
-                        .strip_prefix("!")
-                        .expect("! should be present")
-                        .to_string();
-                    negate = true;
-                }
-
-                /* Per https://git-scm.com/docs/gitignore
-                 * """
-                 *  If there is a separator at the beginning or middle (or both) of the pattern,
-                 *  then the pattern is relative to the directory level of the particular .gitignore
-                 *  file itself. Otherwise the pattern may also match at any level below the
-                 * .gitignore level.
-                 * """
-                 * */
-                if trimmed.contains("/") {
-                    if trimmed.starts_with("/") {
-                        trimmed = trimmed
-                            .strip_prefix("/")
-                            .expect("should be present")
-                            .to_string();
-                    }
-                    // otherwise we don't need to do anything but our pattern is treated as
-                    // as relative
-                } else {
-                    trimmed = format!("**/{trimmed}");
-                }
-
-                patterns.push(IgnorePattern {
-                    negate,
-                    pattern: trimmed.clone(),
-                });
-                patterns.push(IgnorePattern {
-                    negate,
-                    pattern: format!("{trimmed}/**"),
-                });
+        for dir in &[upper_dir, lower_dir] {
+            let file_path = dir.join(ignore_file);
+            if let Ok(content) = std::fs::read_to_string(&file_path) {
+                debug!("Found ignore file: {}", file_path.display());
+                parse_ignore_content(&content, &mut patterns);
+                break;
             }
         }
     }
 
     patterns
+}
+
+/* Parse the content of an ignore file and add patterns to the provided vector */
+fn parse_ignore_content(content: &str, patterns: &mut Vec<IgnorePattern>) {
+    for line in content.lines() {
+        let mut trimmed = line.trim().to_string();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        let mut negate = false;
+
+        // Handle negation and escaped exclamation marks
+        if trimmed.starts_with("\\!") {
+            // Escaped exclamation - remove the backslash
+            trimmed = trimmed[1..].to_string();
+        } else if trimmed.starts_with("!") {
+            // Negation - remove the ! and set negate flag
+            trimmed = trimmed[1..].to_string();
+            negate = true;
+        }
+
+        // Normalize multiple consecutive slashes to single slash
+        while trimmed.contains("//") {
+            trimmed = trimmed.replace("//", "/");
+        }
+
+        let is_directory_pattern = trimmed.ends_with("/");
+
+        /* Per https://git-scm.com/docs/gitignore
+         * """
+         *  If there is a separator at the beginning or middle (or both) of the pattern,
+         *  then the pattern is relative to the directory level of the particular .gitignore
+         *  file itself. Otherwise the pattern may also match at any level below the
+         * .gitignore level.
+         * """
+         * */
+        if trimmed.starts_with("/") {
+            // Anchored pattern - remove the leading slash
+            trimmed = trimmed
+                .strip_prefix("/")
+                .expect("should be present")
+                .to_string();
+        } else if !trimmed.contains("/") && !trimmed.starts_with("**") {
+            // No slash means it can match at any level - add **/ prefix
+            trimmed = format!("**/{trimmed}");
+        }
+        // If pattern contains a slash but doesn't start with /, it's relative to the .gitignore directory
+
+        // Handle directory patterns - fast_glob requires /** suffix for directories
+        if is_directory_pattern && !trimmed.ends_with("/**") {
+            trimmed = trimmed.trim_end_matches('/').to_string();
+            trimmed.push_str("/**");
+        }
+
+        // Special case: patterns without trailing slash that don't contain wildcards
+        // should match both the item itself and everything under it (if it's a directory)
+        // For example, "/target" should match "target" and "target/foo/bar"
+        if !is_directory_pattern
+            && !trimmed.contains('*')
+            && !trimmed.contains('?')
+        {
+            // Add a second pattern that matches everything under this path
+            patterns.push(IgnorePattern {
+                negate,
+                pattern: format!("{trimmed}/**"),
+            });
+        }
+
+        patterns.push(IgnorePattern {
+            negate,
+            pattern: trimmed,
+        });
+    }
 }
 
 pub fn by_reverse_source(a: &ChangeEntry, b: &ChangeEntry) -> Ordering {
