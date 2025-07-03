@@ -47,6 +47,7 @@ ready-for-commit-tests:
 	if [ $$DEBUG_MODE_COUNT -gt 0 ]; then \
 		echo "ERROR: Found $$DEBUG_MODE_COUNT instance(s) of set_debug_mode(true) in test files."; \
 		echo "Debug mode should not be enabled in committed tests."; \
+		grep "set_debug_mode(true)" tests/*.rs; \
 		exit 1; \
 	fi
 	@if [ -f /usr/bin/npx ]; then \

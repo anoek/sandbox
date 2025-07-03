@@ -653,8 +653,6 @@ config/*.data.bak
 /// ignored files even when the --ignored CLI flag is not provided.
 #[rstest]
 fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_debug_mode(true);
-
     // Create test directory using test_filename
     let test_dir = sandbox.test_filename("env-ignore-test");
     std::fs::create_dir_all(&test_dir)?;

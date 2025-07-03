@@ -86,7 +86,7 @@ fn test_overlay_ignore_preference(mut sandbox: SandboxManager) -> Result<()> {
 fn test_resolve_ignores_with_invalid_content(
     mut sandbox: SandboxManager,
 ) -> Result<()> {
-    sandbox.set_ignored(false);  // Don't automatically add --ignored for gitignore tests
+    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
     // Create test directory using test_filename
     let test_dir = sandbox.test_filename("resolve-invalid-content-test");
     std::fs::create_dir_all(&test_dir)?;
@@ -106,11 +106,17 @@ fn test_resolve_ignores_with_invalid_content(
     sandbox.run(&[
         "sh",
         "-c",
-        &format!("echo '   \n# Just a comment\n   ' > {}", sub_dir.join(".gitignore").to_str().unwrap()),
+        &format!(
+            "echo '   \n# Just a comment\n   ' > {}",
+            sub_dir.join(".gitignore").to_str().unwrap()
+        ),
     ])?;
 
     // Create test files
-    sandbox.run(&["touch", sub_dir.join("should-not-be-ignored").to_str().unwrap()])?;
+    sandbox.run(&[
+        "touch",
+        sub_dir.join("should-not-be-ignored").to_str().unwrap(),
+    ])?;
 
     sandbox.run(&["status", &test_dir])?;
     let stdout = sandbox.last_stdout.clone();
@@ -130,7 +136,7 @@ fn test_resolve_ignores_with_invalid_content(
 fn test_resolve_ignores_upper_no_gitignore_lower_has(
     mut sandbox: SandboxManager,
 ) -> Result<()> {
-    sandbox.set_ignored(false);  // Don't automatically add --ignored for gitignore tests
+    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
     // Create test directory using test_filename
     let test_dir = sandbox.test_filename("upper-no-gitignore-test");
     std::fs::create_dir_all(&test_dir)?;
@@ -150,7 +156,10 @@ fn test_resolve_ignores_upper_no_gitignore_lower_has(
     sandbox.run(&[
         "sh",
         "-c",
-        &format!("echo 'from-parent' > {}", parent_dir.join(".gitignore").to_str().unwrap()),
+        &format!(
+            "echo 'from-parent' > {}",
+            parent_dir.join(".gitignore").to_str().unwrap()
+        ),
     ])?;
 
     // Create a child directory without .gitignore (simulating upper)

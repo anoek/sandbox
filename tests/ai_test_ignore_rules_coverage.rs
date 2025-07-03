@@ -15,7 +15,7 @@ fn test_resolve_ignores_with_preference_upper_exists(
     std::fs::create_dir_all(&test_dir)?;
     let sub_dir = Path::new(&test_dir).join("test");
     std::fs::create_dir_all(&sub_dir)?;
-    
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -32,7 +32,10 @@ fn test_resolve_ignores_with_preference_upper_exists(
     sandbox.run(&[
         "sh",
         "-c",
-        &format!("echo 'upper-pattern' > {}", sub_dir.join(".gitignore").to_str().unwrap()),
+        &format!(
+            "echo 'upper-pattern' > {}",
+            sub_dir.join(".gitignore").to_str().unwrap()
+        ),
     ])?;
 
     // Create files to test within the sandbox
@@ -64,7 +67,7 @@ fn test_resolve_ignores_with_preference_fallback_to_lower(
     // Create test directory using test_filename
     let test_dir = sandbox.test_filename("resolve-ignores-fallback-test");
     std::fs::create_dir_all(&test_dir)?;
-    
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -83,11 +86,15 @@ fn test_resolve_ignores_with_preference_fallback_to_lower(
     sandbox.run(&[
         "sh",
         "-c",
-        &format!("echo 'parent-pattern' > {}", parent_dir.join(".gitignore").to_str().unwrap()),
+        &format!(
+            "echo 'parent-pattern' > {}",
+            parent_dir.join(".gitignore").to_str().unwrap()
+        ),
     ])?;
 
     // Create files in child directory
-    sandbox.run(&["touch", child_dir.join("parent-pattern").to_str().unwrap()])?;
+    sandbox
+        .run(&["touch", child_dir.join("parent-pattern").to_str().unwrap()])?;
     sandbox.run(&["touch", child_dir.join("other-file").to_str().unwrap()])?;
 
     sandbox.run(&["status", &test_dir])?;
@@ -116,7 +123,7 @@ fn test_resolve_ignores_no_lower_dir(
     std::fs::create_dir_all(&test_dir)?;
     let empty_dir = Path::new(&test_dir).join("empty");
     std::fs::create_dir_all(&empty_dir)?;
-    
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -133,7 +140,7 @@ fn test_resolve_ignores_no_lower_dir(
 
     sandbox.run(&["status", &test_dir])?;
     let stdout = sandbox.last_stdout.clone();
-    
+
     println!("Status output:\n{}", stdout);
 
     assert!(
@@ -154,7 +161,7 @@ fn test_resolve_ignores_empty_gitignore(
     std::fs::create_dir_all(&test_dir)?;
     let empty_ignore_dir = Path::new(&test_dir).join("empty-ignore");
     std::fs::create_dir_all(&empty_ignore_dir)?;
-    
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -168,12 +175,21 @@ fn test_resolve_ignores_empty_gitignore(
     sandbox.run(&[
         "sh",
         "-c",
-        &format!("echo '' > {}", empty_ignore_dir.join(".gitignore").to_str().unwrap()),
+        &format!(
+            "echo '' > {}",
+            empty_ignore_dir.join(".gitignore").to_str().unwrap()
+        ),
     ])?;
 
     // Create test files
-    sandbox.run(&["touch", empty_ignore_dir.join("test-pattern").to_str().unwrap()])?;
-    sandbox.run(&["touch", empty_ignore_dir.join("other-file").to_str().unwrap()])?;
+    sandbox.run(&[
+        "touch",
+        empty_ignore_dir.join("test-pattern").to_str().unwrap(),
+    ])?;
+    sandbox.run(&[
+        "touch",
+        empty_ignore_dir.join("other-file").to_str().unwrap(),
+    ])?;
 
     // Both files should be included since .gitignore is empty
     sandbox.run(&["status", &test_dir])?;
@@ -202,7 +218,7 @@ fn test_resolve_ignores_with_both_gitignore_and_ignore(
     std::fs::create_dir_all(&test_dir)?;
     let sub_dir = Path::new(&test_dir).join("test");
     std::fs::create_dir_all(&sub_dir)?;
-    
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -216,17 +232,25 @@ fn test_resolve_ignores_with_both_gitignore_and_ignore(
     sandbox.run(&[
         "sh",
         "-c",
-        &format!("echo 'gitignore-pattern' > {}", sub_dir.join(".gitignore").to_str().unwrap()),
+        &format!(
+            "echo 'gitignore-pattern' > {}",
+            sub_dir.join(".gitignore").to_str().unwrap()
+        ),
     ])?;
     sandbox.run(&[
         "sh",
         "-c",
-        &format!("echo 'ignore-pattern' > {}", sub_dir.join(".ignore").to_str().unwrap()),
+        &format!(
+            "echo 'ignore-pattern' > {}",
+            sub_dir.join(".ignore").to_str().unwrap()
+        ),
     ])?;
 
     // Create test files
-    sandbox.run(&["touch", sub_dir.join("gitignore-pattern").to_str().unwrap()])?;
-    sandbox.run(&["touch", sub_dir.join("ignore-pattern").to_str().unwrap()])?;
+    sandbox
+        .run(&["touch", sub_dir.join("gitignore-pattern").to_str().unwrap()])?;
+    sandbox
+        .run(&["touch", sub_dir.join("ignore-pattern").to_str().unwrap()])?;
     sandbox.run(&["touch", sub_dir.join("other-file").to_str().unwrap()])?;
 
     sandbox.run(&["status", &test_dir])?;

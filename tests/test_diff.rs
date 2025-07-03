@@ -34,7 +34,6 @@ fn test_diff_patterns(mut sandbox: SandboxManager) -> Result<()> {
 
 #[rstest]
 fn test_diff_operations(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_debug_mode(true);
     let added = sandbox.test_filename("added_file");
     let removed = sandbox.test_filename("removed_file");
     let modified = sandbox.test_filename("modified_file");

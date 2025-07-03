@@ -9,12 +9,12 @@ use std::path::Path;
 fn test_gitignore_anchored_directory_pattern(
     mut sandbox: SandboxManager,
 ) -> Result<()> {
-    sandbox.set_ignored(false);  // Don't automatically add --ignored for gitignore tests
+    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
 
     // Create a working directory using test_filename
     let test_dir = sandbox.test_filename("anchored-dir-test");
     std::fs::create_dir_all(&test_dir)?;
-    
+
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
         format!("generated-test-data/{}/.gitignore", &sandbox.name);
@@ -45,7 +45,11 @@ fn test_gitignore_anchored_directory_pattern(
     sandbox.run(&[
         "sh",
         "-c",
-        &format!("cat > {} << 'EOF'\n{}EOF", gitignore_path.to_str().unwrap(), gitignore_contents),
+        &format!(
+            "cat > {} << 'EOF'\n{}EOF",
+            gitignore_path.to_str().unwrap(),
+            gitignore_contents
+        ),
     ])?;
 
     // Create test files - we need to create them in the sandbox to see changes
@@ -84,13 +88,13 @@ fn test_gitignore_anchored_directory_pattern(
     sandbox.set_ignored(true);
     sandbox.run(&["status", &test_dir])?;
     let status_with_ignored = sandbox.last_stdout.clone();
-    sandbox.set_ignored(false);  // Reset it back
+    sandbox.set_ignored(false); // Reset it back
 
     // Check which files appear in each output
     for (file, should_be_ignored) in &test_files {
         let file_path = Path::new(&test_dir).join(file);
         let file_str = file_path.to_str().unwrap();
-        
+
         if *should_be_ignored {
             // Ignored files should NOT appear in status without --ignored
             assert!(
