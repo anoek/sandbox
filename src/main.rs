@@ -142,6 +142,12 @@ pub fn main() -> Result<()> {
                 &sandbox,
                 &patterns.unwrap_or_default(),
             ),
+            cli::Action::Delete { yes, patterns } => actions::delete(
+                &config,
+                &sandboxes_storage_dir,
+                &patterns.unwrap_or_default(),
+                yes,
+            ),
         };
         if cli.json {
             if result.is_ok() {

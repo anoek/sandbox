@@ -146,6 +146,17 @@ pub enum Action {
         #[arg(value_name = "PATTERNS", num_args = 0.., conflicts_with = "all")]
         patterns: Option<Vec<String>>,
     },
+
+    /// Delete sandboxes and all associated files
+    Delete {
+        /// Skip confirmation prompt
+        #[arg(short = 'y', long)]
+        yes: bool,
+
+        /// Patterns of sandboxes to delete
+        #[arg(value_name = "PATTERNS", num_args = 0..)]
+        patterns: Option<Vec<String>>,
+    },
 }
 
 pub fn sandbox_name_completion(

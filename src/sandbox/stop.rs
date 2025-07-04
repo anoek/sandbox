@@ -2,7 +2,7 @@ use crate::sandbox::Sandbox;
 use anyhow::{Context, Result};
 use log::trace;
 use nix::{fcntl::readlink, unistd::Pid};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 impl Sandbox {
     pub fn stop(&self) -> Result<()> {
@@ -125,6 +125,15 @@ impl Sandbox {
                     }
                 }
             }
+        }
+
+        let pid_file = PathBuf::from(format!("{}.pid", self.base.display()));
+        trace!("Cleaning up PID file: {}", pid_file.display());
+        if pid_file.exists() {
+            std::fs::remove_file(&pid_file).context(format!(
+                "failed to remove PID file {}",
+                pid_file.display()
+            ))?;
         }
 
         Ok(())

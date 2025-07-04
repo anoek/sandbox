@@ -130,6 +130,96 @@ impl SandboxManager {
         self.run_with_env(args, "", "")
     }
 
+    #[allow(dead_code)]
+    pub fn run_with_stdin(
+        &mut self,
+        args: &[&str],
+        stdin_input: &str,
+    ) -> Result<std::process::Output> {
+        use std::io::Write;
+        use std::process::Stdio;
+
+        let mut cmd = Command::new("sudo");
+        cmd.args(["-E", &self.sandbox_bin]);
+
+        if self.no_sudo {
+            cmd = Command::new(&self.sandbox_bin);
+        }
+
+        if !self.no_default_options
+            && !args.iter().any(|arg| {
+                arg.starts_with("--log_level") || arg.starts_with("-v")
+            })
+        {
+            cmd.args(["-v"]);
+        }
+
+        if self.ignored {
+            cmd.args(["--ignored"]);
+        }
+
+        if !self.no_default_options
+            && !args.iter().any(|arg| arg.starts_with("--name"))
+        {
+            cmd.args([format!("--name={}", &self.name)]);
+        }
+        cmd.args(args);
+
+        // Set up stdin
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        println!(
+            "Running command with stdin: {} {}",
+            cmd.get_program().to_string_lossy(),
+            cmd.get_args()
+                .map(|c| c.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("Failed to spawn command: {:?}", e))?;
+
+        // Write to stdin
+        if let Some(stdin) = child.stdin.as_mut() {
+            stdin.write_all(stdin_input.as_bytes()).map_err(|e| {
+                anyhow::anyhow!("Failed to write to stdin: {:?}", e)
+            })?;
+        }
+
+        // Wait for the command to complete
+        let output = child.wait_with_output().map_err(|e| {
+            anyhow::anyhow!("Failed to wait for command: {:?}", e)
+        })?;
+
+        self.last_stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        self.last_stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        self.all_stdout += &self.last_stdout;
+        self.all_stderr += &self.last_stderr;
+
+        if let Some(code) = output.status.code() {
+            if code != 0 {
+                return Err(anyhow::anyhow!(
+                    "Command returned non-zero exit code: {}\nstdout: {}\nstderr: {}",
+                    code,
+                    self.last_stdout,
+                    self.last_stderr
+                ));
+            }
+        } else {
+            return Err(anyhow::anyhow!(
+                "Command did not return a valid exit code\nstdout: {}\nstderr: {}",
+                self.last_stdout,
+                self.last_stderr
+            ));
+        }
+
+        Ok(output)
+    }
+
     pub fn run_with_env(
         &mut self,
         args: &[&str],
@@ -297,11 +387,14 @@ impl Drop for SandboxManager {
             return;
         }
         let dirname = Path::new(COVERAGE_TEST_DATA_DIR).join(&self.name);
-        #[allow(clippy::panic)]
         if !self.debug_mode {
-            std::fs::remove_dir_all(&dirname).unwrap_or_else(|e| {
-                panic!("Failed to remove {} dir: {}", dirname.display(), e);
-            });
+            if let Err(e) = std::fs::remove_dir_all(&dirname) {
+                // Only warn if the error is not "file not found" - the directory
+                // may have already been cleaned up by the delete functionality
+                if e.kind() != std::io::ErrorKind::NotFound {
+                    warn!("Failed to remove {} dir: {}", dirname.display(), e);
+                }
+            }
         } else {
             warn!("Debug mode is on, *NOT* cleaning up {}", dirname.display());
         }
