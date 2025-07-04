@@ -498,7 +498,7 @@ fn rmdir(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn rmdir_recursive(path: &Path) -> Result<()> {
+pub fn rmdir_recursive(path: &Path) -> Result<()> {
     // Get the device number of the root directory
     let root_device = nix::sys::stat::stat(path)?.st_dev;
 
@@ -518,10 +518,6 @@ fn rmdir_recursive(path: &Path) -> Result<()> {
             } else {
                 entry_device
             };
-        debug!(
-            "entry_device: {}   root_device: {}",
-            entry_device, root_device
-        );
 
         if entry_device != root_device {
             return Err(anyhow::anyhow!(
@@ -535,7 +531,6 @@ fn rmdir_recursive(path: &Path) -> Result<()> {
         } else {
             debug!("{}", format!("rm {}", path.display()).bright_black());
             fs::remove_file(path)?;
-            return Ok(());
         }
     }
 

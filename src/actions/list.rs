@@ -14,53 +14,8 @@ use crate::{
 pub fn list(sandboxes_storage_dir: &Path, patterns: &[String]) -> Result<()> {
     trace!("Listing sandboxes");
 
-    let mut running_sandboxes: Vec<String> = Vec::new();
-    let mut stopped_sandboxes: Vec<String> = Vec::new();
-
-    let sandboxes = sandboxes_storage_dir.read_dir()?;
-    for sandbox in sandboxes {
-        let entry = sandbox?;
-        let path = entry.path();
-        let filename = path
-            .components()
-            .next_back()
-            .expect("Failed to get filename")
-            .as_os_str();
-        if filename.to_string_lossy().ends_with(".lock") {
-            let sandbox_name =
-                filename.to_string_lossy()[..filename.len() - 5].to_string();
-
-            if patterns.is_empty()
-                || patterns.iter().any(|pattern| {
-                    let mut pattern = pattern.clone();
-                    pattern = format!("*{pattern}*");
-                    glob_match(&pattern, &sandbox_name)
-                })
-            {
-                let pid_file =
-                    get_sandbox_pid_path(sandboxes_storage_dir, &sandbox_name);
-                if pid_file.exists() {
-                    let pid = std::fs::read_to_string(pid_file)?;
-
-                    match pid.parse::<i32>() {
-                        Ok(pid) => {
-                            let pid = Pid::from_raw(pid);
-                            if kill(pid, None).is_ok() {
-                                running_sandboxes.push(sandbox_name);
-                            } else {
-                                stopped_sandboxes.push(sandbox_name);
-                            }
-                        }
-                        Err(_) => {
-                            stopped_sandboxes.push(sandbox_name);
-                        }
-                    }
-                } else {
-                    stopped_sandboxes.push(sandbox_name);
-                }
-            }
-        }
-    }
+    let [running_sandboxes, stopped_sandboxes] =
+        get_sandboxes(sandboxes_storage_dir, patterns)?;
 
     if !running_sandboxes.is_empty() {
         outln!("Running sandboxes:");
@@ -94,4 +49,60 @@ pub fn list(sandboxes_storage_dir: &Path, patterns: &[String]) -> Result<()> {
     );
 
     Ok(())
+}
+
+pub fn get_sandboxes(
+    sandboxes_storage_dir: &Path,
+    patterns: &[String],
+) -> Result<[Vec<String>; 2]> {
+    let mut running_sandboxes: Vec<String> = Vec::new();
+    let mut stopped_sandboxes: Vec<String> = Vec::new();
+
+    let sandboxes = sandboxes_storage_dir.read_dir()?;
+    for sandbox in sandboxes {
+        let entry = sandbox?;
+        let path = entry.path();
+        let filename = path
+            .components()
+            .next_back()
+            .expect("Failed to get filename")
+            .as_os_str();
+        if filename.to_string_lossy().ends_with(".lock") {
+            let sandbox_name =
+                filename.to_string_lossy()[..filename.len() - 5].to_string();
+
+            if patterns.is_empty()
+                || patterns
+                    .iter()
+                    .any(|pattern| glob_match(pattern, &sandbox_name))
+            {
+                let pid_file =
+                    get_sandbox_pid_path(sandboxes_storage_dir, &sandbox_name);
+                if pid_file.exists() {
+                    let pid = std::fs::read_to_string(pid_file)?;
+
+                    match pid.parse::<i32>() {
+                        Ok(pid) => {
+                            let pid = Pid::from_raw(pid);
+                            if kill(pid, None).is_ok() {
+                                running_sandboxes.push(sandbox_name);
+                            } else {
+                                stopped_sandboxes.push(sandbox_name);
+                            }
+                        }
+                        Err(_) => {
+                            stopped_sandboxes.push(sandbox_name);
+                        }
+                    }
+                } else {
+                    stopped_sandboxes.push(sandbox_name);
+                }
+            }
+        }
+    }
+
+    running_sandboxes.sort();
+    stopped_sandboxes.sort();
+
+    Ok([running_sandboxes, stopped_sandboxes])
 }

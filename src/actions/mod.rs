@@ -1,5 +1,6 @@
 mod accept;
 mod config;
+mod delete;
 mod diff;
 mod list;
 mod reject;
@@ -9,6 +10,7 @@ mod sync;
 
 pub use accept::*;
 pub use config::*;
+pub use delete::*;
 pub use diff::*;
 pub use list::*;
 pub use reject::*;

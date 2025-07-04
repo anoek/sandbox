@@ -29,6 +29,11 @@ struct IgnorePattern {
     pattern: String,
 }
 
+pub struct CountResult {
+    pub not_ignored: usize,
+    pub ignored: usize,
+}
+
 const BUILT_IN_IGNORE_PATTERNS: &[&str] = &[
     "/tmp/**",
     "/home/*/.*/**",
@@ -198,6 +203,71 @@ impl Sandbox {
         }
 
         Ok(ChangeEntries(change_entries))
+    }
+
+    pub fn count_upper_entries(&self, config: &Config) -> Result<CountResult> {
+        let mut count = 0;
+        let mut ignored = 0;
+        let mut resolved_ignores: HashMap<PathBuf, Vec<IgnorePattern>> =
+            HashMap::new();
+
+        for walkdir_entry in WalkDir::new(&self.upper_base)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = walkdir_entry.path().strip_prefix(&self.upper_base)?;
+
+            let base = match path.components().next() {
+                Some(base) => base,
+                None => {
+                    continue;
+                }
+            };
+
+            let base_decoded = match data_encoding::BASE32_NOPAD_NOCASE
+                .decode(base.as_os_str().as_bytes())
+            {
+                Ok(decoded) => match String::from_utf8(decoded) {
+                    Ok(s) => s,
+                    Err(_) => continue,
+                },
+                Err(_) => continue,
+            };
+
+            let sub = path.components().skip(1).collect::<Vec<_>>();
+
+            if sub.is_empty() {
+                continue;
+            }
+
+            let mut lower_path = PathBuf::from(base_decoded.clone());
+            for component in &sub {
+                lower_path.push(component);
+            }
+
+            if walkdir_entry.path().is_dir() {
+                // only count files, not directories
+                continue;
+            }
+
+            /* Check if we should ignore this based on ignore rules and files */
+            count += 1;
+            if !config.ignored
+                && self.is_ignored(
+                    &base_decoded,
+                    &lower_path,
+                    path,
+                    &mut resolved_ignores,
+                )
+            {
+                ignored += 1;
+                continue;
+            }
+        }
+        Ok(CountResult {
+            not_ignored: count - ignored,
+            ignored,
+        })
     }
 
     /**

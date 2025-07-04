@@ -73,3 +73,38 @@ fn test_list_ignore_bad_pid_file(mut sandbox: SandboxManager) -> Result<()> {
 
     Ok(())
 }
+
+#[rstest]
+fn test_list_stale_pid_file(mut sandbox: SandboxManager) -> Result<()> {
+    sandbox.run(&["config", "sandbox_dir"])?;
+    let mut t = PathBuf::from(sandbox.last_stdout.clone());
+    t.pop();
+    let stale_sandbox_base =
+        format!("{}/{}", t.to_string_lossy(), sandbox.name.clone());
+
+    let pid_file_name = format!("{}.pid", stale_sandbox_base);
+
+    sandbox.run(&["true"])?;
+    let pid = std::fs::read_to_string(&pid_file_name)?;
+    sandbox.run(&["stop"])?;
+
+    // stop cleans up our pid, but let's restore it so we have a stale pid
+    // file that shouldn't conflict with any existing processes on the system
+    // at this point.
+    std::fs::write(&pid_file_name, pid)?;
+
+    println!("pid_file_name: {}", pid_file_name);
+    let pid_file = std::fs::File::open(&pid_file_name)?;
+    let pid_file_content = std::io::read_to_string(pid_file)?;
+    println!("pid_file_content: {}", pid_file_content);
+    assert!(pid_file_content.parse::<i32>().is_ok());
+
+    assert!(sandbox.run(&["list", &sandbox.name.clone()]).is_ok());
+    eprintln!(">>>> {} <<<<", sandbox.last_stdout);
+    eprintln!(">>>> {} <<<<", sandbox.last_stderr);
+    // still expected to be listed
+    assert!(sandbox.all_stdout.contains("Stopped"));
+    assert!(sandbox.all_stdout.contains(&sandbox.name));
+
+    Ok(())
+}
