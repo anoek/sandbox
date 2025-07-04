@@ -5,6 +5,7 @@ use crate::{
         Sandbox,
         changes::{
             EntryOperation,
+            ChangeEntries,
             changes::{by_destination, by_reverse_source},
         },
     },
@@ -24,7 +25,7 @@ pub fn status(
     let cwd = std::env::current_dir()?;
     let all_changes = sandbox.changes(config)?;
     let mut changes = all_changes.matching(&cwd, patterns);
-    let non_matching_count = all_changes.len() - changes.len();
+    let non_matching_count = ChangeEntries::calculate_non_matching_count(&all_changes, &changes);
 
     let mut json_output: Vec<Value> = Vec::new();
 

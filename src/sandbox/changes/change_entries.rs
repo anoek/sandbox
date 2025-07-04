@@ -300,6 +300,27 @@ impl ChangeEntries {
                 .collect(),
         )
     }
+
+    /* This should match the print logic in status */
+    pub fn count_actionable_changes(&self) -> usize {
+        self.0
+            .iter()
+            .filter(|change| match &change.operation {
+                EntryOperation::Set(_) => change.is_actually_modified(),
+                EntryOperation::Remove | EntryOperation::Rename => true,
+                EntryOperation::Error(_) => false,
+            })
+            .count()
+    }
+
+    pub fn calculate_non_matching_count(
+        all_changes: &ChangeEntries,
+        matching_changes: &ChangeEntries,
+    ) -> usize {
+        let all_actionable = all_changes.count_actionable_changes();
+        let matching_actionable = matching_changes.count_actionable_changes();
+        all_actionable.saturating_sub(matching_actionable)
+    }
 }
 
 #[cfg(test)]

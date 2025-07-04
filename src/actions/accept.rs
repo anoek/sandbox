@@ -102,12 +102,12 @@ Once we have a change set we can apply it.
 
 use crate::outln;
 use crate::sandbox::changes::changes::{by_destination, by_reverse_source};
-use crate::sandbox::changes::{EntryOperation, FileDetails};
+use crate::sandbox::changes::{ChangeEntries, EntryOperation, FileDetails};
 use crate::util::{find_mount_point, sync_and_drop_caches};
 use crate::{config::Config, sandbox::Sandbox};
 use anyhow::Result;
 use colored::*;
-use log::{debug, error, info, trace};
+use log::{debug, error, trace};
 use nix::fcntl::AtFlags;
 use nix::sys::stat::{FchmodatFlags, Mode, fchmodat};
 use nix::unistd::{Gid, Uid, fchownat};
@@ -126,11 +126,14 @@ pub fn accept(
     let all_changes = sandbox.changes(config)?;
 
     let mut changes = all_changes.matching(&cwd, patterns);
-    let non_matching_count = all_changes.len() - changes.len();
+    let non_matching_count =
+        ChangeEntries::calculate_non_matching_count(&all_changes, &changes);
 
     if !changes.is_empty() {
-        let mut accepted_count = 0;
+        let mut final_accepted_count = 0;
+
         for pretend in [true, false] {
+            let mut accepted_count = 0;
             let mut deferred_stage_removals = Vec::new();
 
             /* Process removes */
@@ -142,14 +145,14 @@ pub fn accept(
                     )?;
 
                     if source.is_file() || source.is_symlink() {
+                        accepted_count += 1;
                         if !pretend {
                             rm(&source.path, false)?;
-                            accepted_count += 1;
                         }
                     } else if source.is_dir() {
+                        accepted_count += 1;
                         if !pretend {
                             rmdir(&source.path)?;
-                            accepted_count += 1;
                         }
                     } else {
                         return Err(anyhow::anyhow!(
@@ -203,7 +206,7 @@ pub fn accept(
                 .collect::<Vec<_>>();
 
             if pretend {
-                info!(
+                debug!(
                     "Pre-moving {} files to a temporary flat file structure",
                     pending_renames.len()
                 );
@@ -291,22 +294,26 @@ pub fn accept(
                 match &change.operation {
                     EntryOperation::Set(_) => {
                         if let Some(staged) = staged {
+                            // Count this change if it's actually modified (matches status display logic)
+                            if change.is_actually_modified() {
+                                accepted_count += 1;
+                            }
+
                             if staged.is_file() {
-                                let extension =
-                                    uuid::Uuid::new_v4().to_string();
-                                let tmp_path =
-                                    destination.with_extension(extension);
                                 if !pretend {
+                                    let extension =
+                                        uuid::Uuid::new_v4().to_string();
+                                    let tmp_path =
+                                        destination.with_extension(extension);
                                     cp(&staged.path, &tmp_path)?;
                                     mv(&tmp_path, destination)?;
                                     set_permissions(destination, staged)?;
                                     deferred_stage_removals
                                         .push(staged.path.clone());
-                                    accepted_count += 1;
                                 }
                             } else if staged.is_symlink() {
                                 if !pretend {
-                                    info!(
+                                    debug!(
                                         "Accepting symlink {} as file",
                                         staged.path.display()
                                     );
@@ -323,9 +330,10 @@ pub fn accept(
                                     set_permissions(destination, staged)?;
                                     deferred_stage_removals
                                         .push(staged.path.clone());
-                                    accepted_count += 1;
                                 }
                             } else if staged.is_dir() {
+                                // Process directory creation/modification
+                                // Counting is handled above based on is_actually_modified()
                                 if !pretend {
                                     let is_already_dir = destination.exists()
                                         && destination.is_dir();
@@ -335,7 +343,6 @@ pub fn accept(
                                     set_permissions(destination, staged)?;
                                     deferred_stage_removals
                                         .push(staged.path.clone());
-                                    accepted_count += 1;
                                 }
                             } else {
                                 // this should be unreachable as changes should be generating
@@ -358,11 +365,12 @@ pub fn accept(
                         /* We've already done the removes in the first pass, nothing more to do here */
                     }
                     EntryOperation::Rename => {
+                        accepted_count += 1;
                         if !pretend {
                             let tmp_path = &change.tmp_path
                                 .as_ref()
                                 .ok_or_else(|| anyhow::anyhow!("Error completing rename: tmp_path is None"))?;
-                            info!(
+                            debug!(
                                 "Completing rename {} to {}",
                                 tmp_path.display(),
                                 destination.display()
@@ -372,7 +380,6 @@ pub fn accept(
                                 deferred_stage_removals
                                     .push(staged.path.clone());
                             }
-                            accepted_count += 1;
                         }
                     }
                     EntryOperation::Error(error) => {
@@ -392,7 +399,7 @@ pub fn accept(
                     debug!("preparing to remove {}", path.display());
                 }
 
-                info!("Cleaning up deferred directory removals");
+                debug!("Cleaning up deferred directory removals");
                 for path in deferred_stage_removals {
                     if !path.is_symlink() && path.is_dir() {
                         debug!("rmdir_recursive {}", path.display());
@@ -402,10 +409,15 @@ pub fn accept(
                     }
                 }
             }
+
+            // Save the count from the actual phase
+            if !pretend {
+                final_accepted_count = accepted_count;
+            }
         }
 
-        if accepted_count > 0 {
-            outln!("\n{} changes accepted\n", accepted_count);
+        if final_accepted_count > 0 {
+            outln!("\n{} changes accepted\n", final_accepted_count);
         }
     } else {
         outln!("\nNo changes in this directory to accept\n");
