@@ -15,6 +15,7 @@ pub struct Args {
     /// `-v` is shorthand for enabling verbose (trace) logging.
     #[arg(short = 'v',
         long,
+        global = true,
         default_missing_value = "trace", 
         num_args = 0..=1,
         require_equals = true,
@@ -23,17 +24,18 @@ pub struct Args {
     pub log_level: Option<log::LevelFilter>,
 
     /// Name of the sandbox, defaults to "sandbox"
-    #[arg(long, value_hint = clap::ValueHint::Other, add = ArgValueCompleter::new(sandbox_name_completion))]
+    #[arg(long, global = true, value_hint = clap::ValueHint::Other, add = ArgValueCompleter::new(sandbox_name_completion))]
     pub name: Option<String>,
 
     /// Base storage directory for all sandboxes. Defaults to `~/.sandboxes/`
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub storage_dir: Option<String>,
 
     /// Enable host (or other) network. Defaults to `none`, which disables network access. If you
     /// want to enable network access by default you can store net="host" in a config file.
     #[arg(
         long,
+        global = true,
         num_args = 0..=1,
         default_missing_value = "host",
         require_equals = true,
@@ -46,6 +48,7 @@ pub struct Args {
     /// depending on your situation.
     #[arg(
         long,
+        global = true,
         action = clap::ArgAction::Set,
         value_parser = clap::value_parser!(bool),
         default_missing_value = "true",
@@ -55,15 +58,15 @@ pub struct Args {
     pub bind_fuse: Option<bool>,
 
     /// Formats action output as a JSON blob. Does nothing for sandboxed commands.
-    #[arg(long, action = clap::ArgAction::SetTrue)]
+    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub json: bool,
 
     /// Do not load config files.
-    #[arg(long, action = clap::ArgAction::SetTrue)]
+    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub no_config: bool,
 
     /// Include files that would normally be filtered out by ignore rules.
-    #[arg(long, action = clap::ArgAction::SetTrue)]
+    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub ignored: bool,
 
     /***************/
