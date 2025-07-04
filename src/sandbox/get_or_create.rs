@@ -415,6 +415,43 @@ impl Sandbox {
             ))?;
         }
 
+        if matches!(config.net, Network::Host) {
+            if let Ok(xdg_runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+                let bus_path = Path::new(&xdg_runtime_dir).join("bus");
+                if bus_path.exists() {
+                    trace!("Binding user bus from XDG_RUNTIME_DIR");
+
+                    let uid_dir = format!("user/{}", self.uid);
+                    let new_root_run_user = new_root_run.join(&uid_dir);
+
+                    mkdir(&new_root_run_user, self.uid, self.gid)?;
+
+                    let new_root_bus = new_root_run_user.join("bus");
+                    std::fs::write(&new_root_bus, "").context(format!(
+                        "Failed to create {}",
+                        new_root_bus.display()
+                    ))?;
+
+                    mount(
+                        Some(&bus_path),
+                        &new_root_bus,
+                        Some("bind"),
+                        MsFlags::MS_BIND,
+                        null,
+                    )
+                    .context(format!(
+                        "failed to bind mount {} to {}",
+                        bus_path.display(),
+                        new_root_bus.display()
+                    ))?;
+                }
+            }
+        }
+
+        /* Unclear if we need to put this behind a net=host check, the primary use case
+         * I know if is letting symlinks for resolv.conf to work, so in that regard it
+         * makes sense, but there may be a plethora of other things that are used that
+         * make it so this should always need to be done if it exists. */
         if matches!(config.net, Network::Host)
             && Path::new("/run/systemd").exists()
         {
