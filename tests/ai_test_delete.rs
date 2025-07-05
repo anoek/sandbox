@@ -89,7 +89,7 @@ fn test_delete_shows_sandbox_status() -> Result<()> {
     let mut sandbox2 = sandbox();
 
     // Give them unique but similar names
-    let base_name = format!("test-del-status-{}", rid());
+    let base_name = format!("sandbox-coverage-test-del-status-{}", rid());
     sandbox1.name = format!("{}-1", base_name);
     sandbox2.name = format!("{}-2", base_name);
     let name1 = sandbox1.name.clone();
@@ -121,9 +121,9 @@ fn test_delete_multiple_sandboxes_with_pattern() -> Result<()> {
     let mut sandbox3 = sandbox();
 
     // Give them related names
-    sandbox1.name = format!("test-delete-{}", rid());
-    sandbox2.name = format!("test-delete-{}", rid());
-    sandbox3.name = format!("test-other-{}", rid());
+    sandbox1.name = format!("sandbox-coverage-test-delete-{}", rid());
+    sandbox2.name = format!("sandbox-coverage-test-delete-{}", rid());
+    sandbox3.name = format!("sandbox-coverage-test-other-{}", rid());
 
     // Create sandboxes
     sandbox1.run(&["true"])?;
@@ -131,7 +131,7 @@ fn test_delete_multiple_sandboxes_with_pattern() -> Result<()> {
     sandbox3.run(&["true"])?;
 
     // Delete sandboxes matching pattern
-    sandbox1.run(&["delete", "-y", "test-delete*"])?;
+    sandbox1.run(&["delete", "-y", "sandbox-coverage-test-delete*"])?;
 
     // Should show the sandboxes being deleted
     assert!(sandbox1.last_stdout.contains(&sandbox1.name));
@@ -307,7 +307,7 @@ fn test_delete_multiple_stopped_sandboxes() -> Result<()> {
     let mut sandbox3 = sandbox();
 
     // Give them related names
-    let base_name = format!("test-del-stopped-{}", rid());
+    let base_name = format!("sandbox-coverage-test-del-stopped-{}", rid());
     sandbox1.name = format!("{}-1", base_name);
     sandbox2.name = format!("{}-2", base_name);
     sandbox3.name = format!("{}-3", base_name);
@@ -344,7 +344,7 @@ fn test_delete_mixed_running_and_stopped_sandboxes() -> Result<()> {
     let mut sandbox3 = sandbox();
 
     // Give them related names
-    let base_name = format!("test-del-mixed-{}", rid());
+    let base_name = format!("sandbox-coverage-test-del-mixed-{}", rid());
     sandbox1.name = format!("{}-running", base_name);
     sandbox2.name = format!("{}-stopped", base_name);
     sandbox3.name = format!("{}-also-running", base_name);
