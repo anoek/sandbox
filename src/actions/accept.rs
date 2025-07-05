@@ -105,7 +105,7 @@ use crate::sandbox::changes::changes::{by_destination, by_reverse_source};
 use crate::sandbox::changes::{ChangeEntries, EntryOperation, FileDetails};
 use crate::util::{find_mount_point, sync_and_drop_caches};
 use crate::{config::Config, sandbox::Sandbox};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::*;
 use log::{debug, error, trace};
 use nix::fcntl::AtFlags;
@@ -511,15 +511,23 @@ fn rmdir(path: &Path) -> Result<()> {
 }
 
 pub fn rmdir_recursive(path: &Path) -> Result<()> {
-    // Get the device number of the root directory
-    let root_device = nix::sys::stat::stat(path)?.st_dev;
+    let root_device = nix::sys::stat::lstat(path)
+        .context(format!("failed to stat {}", path.display()))?
+        .st_dev;
 
-    for entry in fs::read_dir(path)? {
-        let entry = entry?;
-        let path = entry.path();
+    for entry in fs::read_dir(path)
+        .context(format!("failed to read directory {}", path.display()))?
+    {
+        let entry = entry.context(format!(
+            "failed to read directory entry in {}",
+            path.display()
+        ))?;
+        let entry_path = entry.path();
 
-        // Check if the directory is on the same device
-        let entry_device = nix::sys::stat::stat(&path)?.st_dev;
+        let entry_stat = nix::sys::stat::lstat(&entry_path)
+            .context(format!("failed to stat {}", entry_path.display()))?;
+
+        let entry_device = entry_stat.st_dev;
 
         #[cfg(feature = "coverage")]
         let entry_device =
@@ -533,20 +541,24 @@ pub fn rmdir_recursive(path: &Path) -> Result<()> {
 
         if entry_device != root_device {
             return Err(anyhow::anyhow!(
-                "Cannot remove {}: directory is on a different device",
-                path.display()
+                "Cannot remove {}: entry is on a different device",
+                entry_path.display()
             ));
         }
 
-        if path.is_dir() {
-            rmdir_recursive(&path)?;
+        if entry_stat.st_mode & libc::S_IFMT == libc::S_IFDIR {
+            rmdir_recursive(&entry_path)?;
         } else {
-            debug!("{}", format!("rm {}", path.display()).bright_black());
-            fs::remove_file(path)?;
+            debug!("{}", format!("rm {}", entry_path.display()).bright_black());
+            fs::remove_file(&entry_path).context(format!(
+                "failed to remove {}",
+                entry_path.display()
+            ))?;
         }
     }
 
     debug!("{}", format!("rmdir {}", path.display()).bright_black());
-    fs::remove_dir(path)?;
+    fs::remove_dir(path)
+        .context(format!("failed to remove directory {}", path.display()))?;
     Ok(())
 }

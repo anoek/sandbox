@@ -6,8 +6,8 @@ use log::{debug, trace};
 
 impl Sandbox {
     pub fn delete(&self) -> Result<()> {
-        self.stop()?;
-        self.unmount()?;
+        self.stop().context("failed to stop sandbox")?;
+        self.unmount().context("failed to unmount sandbox")?;
 
         trace!("Removing sandbox directory: {}", self.base.display());
         if self.base.exists() {
