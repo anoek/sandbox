@@ -62,9 +62,6 @@ clean:
 	cargo clean
 	rm -Rf --one-file-system coverage dist build generated-test-data
 	sudo rm -f default*.profraw
-	if [ -f /usr/bin/sandbox ]; then \
-		make clean-coverage-sandboxes; \
-	fi
 	
 clean-coverage-sandboxes:
 	sandbox stop 'sandbox-coverage-test-*'
