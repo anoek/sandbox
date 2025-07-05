@@ -12,33 +12,48 @@ use crate::types::UidGidHome;
  * possible opportunity.
  */
 pub fn resolve_uid_gid_home() -> Result<UidGidHome> {
-    let sudo_uid = std::env::var("SUDO_UID");
-    let sudo_gid = std::env::var("SUDO_GID");
-    let home = std::env::var("SUDO_HOME")
-        .or(std::env::var("HOME"))
-        .unwrap_or("/tmp".to_string());
-
     let resuid = getresuid()?;
     let resgid = getresgid()?;
 
-    let uid = match sudo_uid {
-        Ok(uid) => match uid.parse::<u32>() {
-            Ok(uid) => Uid::from_raw(uid),
-            Err(_) => {
-                return Err(anyhow!("Failed to parse SUDO_UID: {:?}", uid));
-            }
-        },
-        Err(_) => resuid.real,
-    };
+    // Check if we're running with setuid by comparing real vs effective UID
+    // When running with setuid: real UID is the user, effective UID is 0 (root)
+    // When running with sudo: both real and effective UIDs are 0
+    let is_setuid =
+        resuid.real != resuid.effective && resuid.effective == Uid::from_raw(0);
 
-    let gid = match sudo_gid {
-        Ok(gid) => match gid.parse::<u32>() {
-            Ok(gid) => Gid::from_raw(gid),
-            Err(_) => {
-                return Err(anyhow!("Failed to parse SUDO_GID: {:?}", gid));
-            }
-        },
-        Err(_) => resgid.real,
+    let (uid, gid, home) = if is_setuid {
+        // Running with setuid - use real UID/GID and don't trust SUDO_ vars
+        let home = std::env::var("HOME").unwrap_or("/tmp".to_string());
+        (resuid.real, resgid.real, home)
+    } else {
+        // Running with sudo or normally - check for SUDO_ vars
+        let sudo_uid = std::env::var("SUDO_UID");
+        let sudo_gid = std::env::var("SUDO_GID");
+        let home = std::env::var("SUDO_HOME")
+            .or(std::env::var("HOME"))
+            .unwrap_or("/tmp".to_string());
+
+        let uid = match sudo_uid {
+            Ok(uid) => match uid.parse::<u32>() {
+                Ok(uid) => Uid::from_raw(uid),
+                Err(_) => {
+                    return Err(anyhow!("Failed to parse SUDO_UID: {:?}", uid));
+                }
+            },
+            Err(_) => resuid.real,
+        };
+
+        let gid = match sudo_gid {
+            Ok(gid) => match gid.parse::<u32>() {
+                Ok(gid) => Gid::from_raw(gid),
+                Err(_) => {
+                    return Err(anyhow!("Failed to parse SUDO_GID: {:?}", gid));
+                }
+            },
+            Err(_) => resgid.real,
+        };
+
+        (uid, gid, home)
     };
 
     let home_path = Path::new(&home);
