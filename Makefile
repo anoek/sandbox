@@ -60,7 +60,7 @@ ready-for-commit-tests:
 
 clean:
 	cargo clean
-	rm -rf coverage dist build
+	rm -Rf --one-file-system coverage dist build generated-test-data
 	sudo rm -f default*.profraw
 	if [ -f /usr/bin/sandbox ]; then \
 		make clean-coverage-sandboxes; \
