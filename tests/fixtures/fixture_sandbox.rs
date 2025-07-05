@@ -374,6 +374,10 @@ impl SandboxManager {
 
 impl Drop for SandboxManager {
     fn drop(&mut self) {
+        // Reset flags to default state for cleanup commands
+        self.no_default_options = false;
+        self.ignored = true;
+
         if let Err(e) = self.run(&["stop"]) {
             error!("Failed to kill sandbox: {}", e);
             error!("last_stderr: {}", self.last_stderr);
