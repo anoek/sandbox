@@ -4,9 +4,9 @@ use crate::sandbox::changes::*;
 use crate::util::find_mount_point;
 use anyhow::Context;
 use anyhow::Result;
-use log::debug;
 use log::error;
 use log::info;
+use log::trace;
 use nix::NixPath;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -454,7 +454,7 @@ fn resolve_ignores(upper_dir: &Path, lower_dir: &Path) -> Vec<IgnorePattern> {
         for dir in &[upper_dir, lower_dir] {
             let file_path = dir.join(ignore_file);
             if let Ok(content) = std::fs::read_to_string(&file_path) {
-                debug!("Found ignore file: {}", file_path.display());
+                trace!("Found ignore file: {}", file_path.display());
                 parse_ignore_content(&content, &mut patterns);
                 break;
             }
