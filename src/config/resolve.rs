@@ -169,6 +169,8 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources,
     };
 
+    validate_config(&config)?;
+
     trace!("Storage dir: {:?}", config.storage_dir);
     trace!("Sandbox: {:?}", config.name);
 
@@ -401,12 +403,47 @@ fn merge_configs(
     }
 }
 
+fn validate_config(config: &Config) -> Result<()> {
+    if config.name.contains("/") {
+        return Err(anyhow::anyhow!("Invalid sandbox name: {}", config.name));
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::Network;
     use log::LevelFilter;
     use std::collections::HashMap;
+
+    #[test]
+    fn test_validate_config() {
+        let mut config = Config {
+            name: "test-sandbox".to_string(),
+            storage_dir: PathBuf::from("/tmp/test"),
+            sandbox_dir: PathBuf::from("/tmp/test"),
+            upper_cwd: PathBuf::from("/tmp/test"),
+            overlay_cwd: PathBuf::from("/tmp/test"),
+            net: Network::Host,
+            sources: HashMap::new(),
+            bind_fuse: true,
+            ignored: false,
+            log_level: LevelFilter::Info,
+        };
+        assert!(validate_config(&config).is_ok());
+        config.name = "../test-sandbox".to_string();
+        assert!(validate_config(&config).is_err());
+        config.name = "test-sandbox/".to_string();
+        assert!(validate_config(&config).is_err());
+        config.name = "test-sandbox\\".to_string();
+        assert!(validate_config(&config).is_ok());
+        config.name = "test-sandbox.".to_string();
+        assert!(validate_config(&config).is_ok());
+        config.name = ".test".to_string();
+        assert!(validate_config(&config).is_ok());
+    }
 
     #[test]
     fn test_merge_configs() {
