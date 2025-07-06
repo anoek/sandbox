@@ -39,6 +39,12 @@ fi
 
 mkdir -p generated
 
+# Ensure we have a ssh key
+if [ ! -f "generated/id_sandbox_test_vm_key" ]; then
+    echo "Generating ssh key"
+    ssh-keygen -t ed25519 -C "SSH key copied into the virtual machines to test the sandbox binary" -f "generated/id_sandbox_test_vm_key" -N ""
+fi
+
 echo "Generating 50-dhcp-coverage.yaml"
 
 cat <<EOF > generated/50-dhcp-coverage.yaml
