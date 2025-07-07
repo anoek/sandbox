@@ -1,6 +1,6 @@
 mod fixtures;
 
-use std::process::Command;
+use std::{path::PathBuf, process::Command};
 
 use anyhow::Result;
 use fixtures::*;
@@ -146,6 +146,71 @@ fn test_external_changes(mut sandbox: SandboxManager) -> Result<()> {
     );
 
     std::fs::remove_file(filename)?;
+
+    Ok(())
+}
+
+#[rstest]
+fn test_status_gitignore(mut sandbox: SandboxManager) -> Result<()> {
+    let base = PathBuf::from(&sandbox.test_filename("test"));
+    std::fs::create_dir_all(base.to_str().unwrap())?;
+    let gitignore_path = base.join(".gitignore");
+    std::fs::write(
+        gitignore_path.to_str().unwrap(),
+        "
+# Allow everything that was previously blocked by the project's gitignore
+!*
+
+# Things we want to test
+empty
+dir1
+suffix/
+two
+/anchored
+space-at-end\\ 
+
+!**/present*
+",
+    )?;
+
+    sandbox.run(&["mkdir", base.join("empty").to_str().unwrap()])?;
+    sandbox.run(&["mkdir", base.join("dir1").to_str().unwrap()])?;
+    sandbox.run(&["mkdir", base.join("suffix").to_str().unwrap()])?;
+    sandbox.run(&["mkdir", "-p", base.join("two/.part").to_str().unwrap()])?;
+    sandbox.run(&["mkdir", base.join("anchored").to_str().unwrap()])?;
+    sandbox.run(&["touch", base.join("space-at-end").to_str().unwrap()])?;
+    sandbox.run(&["touch", base.join("space-at-end ").to_str().unwrap()])?;
+
+    sandbox.run(&["touch", base.join("dir1/file1").to_str().unwrap()])?;
+    sandbox.run(&["touch", base.join("suffix/file2").to_str().unwrap()])?;
+    sandbox.run(&["touch", base.join("two/.part/file3").to_str().unwrap()])?;
+    sandbox.run(&["touch", base.join("anchored/file4").to_str().unwrap()])?;
+
+    sandbox.run(&["touch", base.join("dir1/present1").to_str().unwrap()])?;
+    sandbox.run(&["touch", base.join("suffix/present2").to_str().unwrap()])?;
+    sandbox
+        .run(&["touch", base.join("two/.part/present3").to_str().unwrap()])?;
+    sandbox
+        .run(&["touch", base.join("anchored/present4").to_str().unwrap()])?;
+
+    sandbox.set_ignored(false);
+    sandbox.run(&["status", base.to_str().unwrap()])?;
+
+    println!("{}", sandbox.last_stderr);
+    println!("{}", sandbox.last_stdout);
+
+    assert!(!sandbox.last_stdout.contains("space-at-end "));
+    assert!(!sandbox.last_stdout.contains("empty"));
+    assert!(!sandbox.last_stdout.contains("file1"));
+    assert!(!sandbox.last_stdout.contains("file2"));
+    assert!(!sandbox.last_stdout.contains("file3"));
+    assert!(!sandbox.last_stdout.contains("file4"));
+
+    assert!(sandbox.last_stdout.contains("space-at-end"));
+    assert!(sandbox.last_stdout.contains("present1"));
+    assert!(sandbox.last_stdout.contains("present2"));
+    assert!(sandbox.last_stdout.contains("present3"));
+    assert!(sandbox.last_stdout.contains("present4"));
 
     Ok(())
 }

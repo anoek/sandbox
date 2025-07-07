@@ -468,6 +468,11 @@ fn resolve_ignores(upper_dir: &Path, lower_dir: &Path) -> Vec<IgnorePattern> {
 fn parse_ignore_content(content: &str, patterns: &mut Vec<IgnorePattern>) {
     for line in content.lines() {
         let mut trimmed = line.trim().to_string();
+        if line.ends_with("\\ ") {
+            trimmed.pop(); // pop the \
+            trimmed += " ";
+        }
+        let original_trimmed = trimmed.clone();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
@@ -488,8 +493,6 @@ fn parse_ignore_content(content: &str, patterns: &mut Vec<IgnorePattern>) {
             trimmed = trimmed.replace("//", "/");
         }
 
-        let is_directory_pattern = trimmed.ends_with("/");
-
         /* Per https://git-scm.com/docs/gitignore
          * """
          *  If there is a separator at the beginning or middle (or both) of the pattern,
@@ -507,11 +510,15 @@ fn parse_ignore_content(content: &str, patterns: &mut Vec<IgnorePattern>) {
         } else if !trimmed.contains("/") && !trimmed.starts_with("**") {
             // No slash means it can match at any level - add **/ prefix
             trimmed = format!("**/{trimmed}");
+        } else {
+            // If pattern contains a slash but doesn't start with /, it's relative to the
+            // .gitignore directory
         }
-        // If pattern contains a slash but doesn't start with /, it's relative to the .gitignore directory
+
+        let only_match_directories = trimmed.ends_with("/");
 
         // Handle directory patterns - fast_glob requires /** suffix for directories
-        if is_directory_pattern && !trimmed.ends_with("/**") {
+        if only_match_directories && !trimmed.ends_with("/**") {
             trimmed = trimmed.trim_end_matches('/').to_string();
             trimmed.push_str("/**");
         }
@@ -519,9 +526,9 @@ fn parse_ignore_content(content: &str, patterns: &mut Vec<IgnorePattern>) {
         // Special case: patterns without trailing slash that don't contain wildcards
         // should match both the item itself and everything under it (if it's a directory)
         // For example, "/target" should match "target" and "target/foo/bar"
-        if !is_directory_pattern
-            && !trimmed.contains('*')
-            && !trimmed.contains('?')
+        if !only_match_directories
+            && !original_trimmed.contains('*')
+            && !original_trimmed.contains('?')
         {
             // Add a second pattern that matches everything under this path
             patterns.push(IgnorePattern {
