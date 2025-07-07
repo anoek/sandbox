@@ -7,7 +7,7 @@ ifndef::env-github,env-vscode[]
 = sandbox(1)
 :doctype: manpage
 :man manual: Sandbox Manual
-:man source: 0.1.0
+:man source: 0.3.0
 :man-linkstyle: pass:[blue R < >]
 endif::[]
 
@@ -54,14 +54,17 @@ You should be using other more isolated environments for that sort of research.
 ifdef::env-github,env-vscode[]
 == Installation
 
-You can download precompiled binaries from
-https://github.com/anoek/sandbox/releases, or install from source using `make
-install`.
+To build and install from source simply run `make install`.
 
-Please note, this is a Linux tool and will not work on any other operating systems.
+Arch Linux users can install the `sandbox-bin` package from the AUR.
+
+For most other Linux distributions there are applicable binary packages available from
+the releases page: https://github.com/anoek/sandbox/releases
 
 Binaries are provided for x86_64 and arm64, but it should compile and work on 
 any architecture linux and rust supports.
+
+Note that this is a Linux tool and will not work on any other operating systems.
 
 
 endif::[]
