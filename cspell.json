@@ -203,6 +203,7 @@
         "sighandler",
         "SIGSTOP",
         "SIGTSTP",
+        "subsec",
         "syscall",
         "sysconfig",
         "sysfs",

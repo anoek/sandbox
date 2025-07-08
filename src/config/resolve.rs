@@ -3,9 +3,11 @@ use crate::config::Network;
 use crate::util::{can_access, can_mkdir, find_mount_point, mkdir};
 use crate::{config::Config, util::resolve_uid_gid_home};
 use anyhow::{Context, Result};
+use chrono::Local;
 use log::trace;
 use nix::unistd::{Gid, Uid};
 use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
 use std::{env, str::FromStr};
 use std::{ffi::CStr, path::PathBuf};
 
@@ -14,6 +16,16 @@ use super::cli::Args;
 pub fn resolve_config(cli: Args) -> Result<Config> {
     let uid_gid_home = resolve_uid_gid_home()?;
     let (mut partial_config, mut sources) = load_partial(cli.no_config)?;
+
+    // Check for mutually exclusive name options
+    if (cli.new || cli.last)
+        && (partial_config.name.is_some() || env::var("SANDBOX_NAME").is_ok())
+    {
+        // If --new or --last is specified, name must not be provided via env or config
+        return Err(anyhow::anyhow!(
+            "Cannot use --new or --last when name is specified in config file or environment variable"
+        ));
+    }
 
     // Override with environment variables if set
     if let Ok(log_level) = env::var("SANDBOX_LOG_LEVEL") {
@@ -24,10 +36,12 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
             return Err(anyhow::anyhow!("Invalid log level: {}", log_level));
         }
     }
-    if let Ok(name) = env::var("SANDBOX_NAME") {
-        if !name.is_empty() {
-            partial_config.name = Some(name);
-            sources.insert("name".into(), "environment".into());
+    if !cli.new && !cli.last {
+        if let Ok(name) = env::var("SANDBOX_NAME") {
+            if !name.is_empty() {
+                partial_config.name = Some(name);
+                sources.insert("name".into(), "environment".into());
+            }
         }
     }
     if let Ok(storage_dir) = env::var("SANDBOX_STORAGE_DIR") {
@@ -79,13 +93,35 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         partial_config.log_level = Some(log_level);
         sources.insert("log_level".into(), "cli".into());
     }
-    if let Some(name) = cli.name {
-        partial_config.name = Some(name);
-        sources.insert("name".into(), "cli".into());
-    }
+
+    // Set storage_dir first if provided via CLI, as it's needed for --new and --last
     if let Some(storage_dir) = cli.storage_dir {
         partial_config.storage_dir = Some(storage_dir);
         sources.insert("storage_dir".into(), "cli".into());
+    }
+
+    // Handle name resolution based on CLI flags
+    if cli.new {
+        // Generate a new timestamp-based name
+        let name = generate_timestamp_name(
+            &partial_config.storage_dir,
+            uid_gid_home.uid,
+            uid_gid_home.gid,
+        )?;
+        partial_config.name = Some(name);
+        sources.insert("name".into(), "cli --new".into());
+    } else if cli.last {
+        // Find the most recently created sandbox
+        let name = find_last_sandbox(
+            &partial_config.storage_dir,
+            uid_gid_home.uid,
+            uid_gid_home.gid,
+        )?;
+        partial_config.name = Some(name);
+        sources.insert("name".into(), "cli --last".into());
+    } else if let Some(name) = cli.name {
+        partial_config.name = Some(name);
+        sources.insert("name".into(), "cli".into());
     }
 
     if let Some(net) = cli.net {
@@ -409,6 +445,107 @@ fn validate_config(config: &Config) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn generate_timestamp_name(
+    storage_dir: &Option<String>,
+    uid: Uid,
+    gid: Gid,
+) -> Result<String> {
+    let storage_dir =
+        resolve_sandbox_storage_dir(storage_dir.clone(), uid, gid)?;
+
+    #[cfg(feature = "coverage")]
+    let mut iter = 0;
+
+    loop {
+        let now = Local::now();
+        let base_name =
+            format!("ephemeral_{}", now.format("%Y-%m-%d_%H:%M:%S"));
+
+        // Check if this name already exists
+        let sandbox_path = storage_dir.join(&base_name);
+        if !sandbox_path.exists() {
+            return Ok(base_name);
+        }
+
+        // If it exists, try with millisecond precision
+        let name_with_ms =
+            format!("{}.{:03}", base_name, now.timestamp_subsec_millis());
+
+        #[cfg(feature = "coverage")]
+        let name_with_ms =
+            if std::env::var_os("TEST_NAME_WITH_MS").is_some() && iter == 0 {
+                format!("{}", std::env::var("TEST_NAME_WITH_MS").unwrap())
+            } else {
+                name_with_ms
+            };
+
+        let sandbox_path_ms = storage_dir.join(&name_with_ms);
+        if !sandbox_path_ms.exists() {
+            return Ok(name_with_ms);
+        }
+
+        // If even that exists, sleep for a millisecond and try again
+        std::thread::sleep(Duration::from_millis(1));
+
+        #[cfg(feature = "coverage")]
+        {
+            iter += 1;
+        }
+    }
+}
+
+fn find_last_sandbox(
+    storage_dir: &Option<String>,
+    uid: Uid,
+    gid: Gid,
+) -> Result<String> {
+    let storage_dir =
+        resolve_sandbox_storage_dir(storage_dir.clone(), uid, gid)?;
+
+    let entries = std::fs::read_dir(&storage_dir).context(format!(
+        "Failed to read sandbox storage directory: {:?}",
+        storage_dir
+    ))?;
+
+    let mut sandboxes: Vec<(String, SystemTime)> = Vec::new();
+
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+
+        // Check if this is a valid sandbox directory
+        if path.is_dir()
+            && path.join("upper").is_dir()
+            && path.join("work").is_dir()
+            && path.join("overlay").is_dir()
+        {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let metadata = entry.metadata()?;
+            let created = metadata
+                .created()
+                .or_else(|_| metadata.modified())
+                .context("Failed to get creation time for sandbox")?;
+            sandboxes.push((name, created));
+        }
+    }
+
+    #[cfg(feature = "coverage")]
+    let mut sandboxes = if std::env::var_os("TEST_LAST_IS_EMPTY").is_some() {
+        vec![]
+    } else {
+        sandboxes
+    };
+
+    if sandboxes.is_empty() {
+        return Err(anyhow::anyhow!("No sandboxes found"));
+    }
+
+    // Sort by creation time (newest first)
+    sandboxes.sort_by(|a, b| b.1.cmp(&a.1));
+
+    Ok(sandboxes[0].0.clone())
 }
 
 #[cfg(test)]
