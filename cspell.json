@@ -21,6 +21,7 @@
         "cflag",
         "chdir",
         "chgrp",
+        "chrono",
         "cifs",
         "Cinstrument",
         "CLEARTID",
