@@ -24,8 +24,16 @@ pub struct Args {
     pub log_level: Option<log::LevelFilter>,
 
     /// Name of the sandbox, defaults to "sandbox"
-    #[arg(long, global = true, value_hint = clap::ValueHint::Other, add = ArgValueCompleter::new(sandbox_name_completion))]
+    #[arg(long, global = true, value_hint = clap::ValueHint::Other, add = ArgValueCompleter::new(sandbox_name_completion), conflicts_with_all = &["new", "last"])]
     pub name: Option<String>,
+
+    /// Create a new sandbox with an auto-generated timestamp name
+    #[arg(long, global = true, conflicts_with_all = &["name", "last"])]
+    pub new: bool,
+
+    /// Use the most recently created sandbox
+    #[arg(long, global = true, conflicts_with_all = &["name", "new"])]
+    pub last: bool,
 
     /// Base storage directory for all sandboxes. Defaults to `~/.sandboxes/`
     #[arg(long, global = true)]
