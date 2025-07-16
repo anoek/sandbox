@@ -1,15 +1,18 @@
 use super::PartialConfig;
 use crate::config::Network;
 use crate::util::{can_access, can_mkdir, find_mount_point, mkdir};
-use crate::{config::Config, util::resolve_uid_gid_home};
+use crate::{config::Config, types::UidGidHome, util::resolve_uid_gid_home};
 use anyhow::{Context, Result};
 use chrono::Local;
 use log::trace;
 use nix::unistd::{Gid, Uid};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime};
 use std::{env, str::FromStr};
-use std::{ffi::CStr, path::PathBuf};
+use std::{
+    ffi::CStr,
+    path::{Path, PathBuf},
+};
 
 use super::cli::Args;
 
@@ -51,20 +54,6 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
 
-    if let Ok(bind_fuse) = env::var("SANDBOX_BIND_FUSE") {
-        if !bind_fuse.is_empty() {
-            if let Ok(bind_fuse) = bool::from_str(&bind_fuse) {
-                partial_config.bind_fuse = Some(bind_fuse);
-                sources.insert("bind_fuse".into(), "environment".into());
-            } else {
-                return Err(anyhow::anyhow!(
-                    "Invalid bind_fuse: {}",
-                    bind_fuse
-                ));
-            }
-        }
-    }
-
     if let Ok(net) = env::var("SANDBOX_NET") {
         if !net.is_empty() {
             if let Ok(net) = Network::from_str(&net) {
@@ -86,6 +75,30 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
                 ignored_env
             ));
         }
+    }
+
+    // Handle bind mounts from environment variable (additive)
+    if let Ok(bind_mounts_env) = env::var("SANDBOX_BIND_MOUNTS") {
+        let env_bind_mounts: Vec<String> = bind_mounts_env
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if !env_bind_mounts.is_empty() {
+            match &mut partial_config.bind_mounts {
+                Some(existing) => existing.extend(env_bind_mounts),
+                None => partial_config.bind_mounts = Some(env_bind_mounts),
+            }
+            sources.insert("bind_mounts".into(), "environment".into());
+        }
+    }
+
+    if let Ok(no_default_binds_env) = env::var("SANDBOX_NO_DEFAULT_BINDS") {
+        let no_default_binds_val = bool::from_str(&no_default_binds_env)
+            .expect("Invalid value for SANDBOX_NO_DEFAULT_BINDS");
+        partial_config.no_default_binds = Some(no_default_binds_val);
+        sources.insert("no_default_binds".into(), "environment".into());
     }
 
     // Override with CLI args if provided (highest precedence)
@@ -129,14 +142,22 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("net".into(), "cli".into());
     }
 
-    if let Some(bind_fuse) = cli.bind_fuse {
-        partial_config.bind_fuse = Some(bind_fuse);
-        sources.insert("bind_fuse".into(), "cli".into());
-    }
-
     if cli.ignored {
         partial_config.ignored = Some(true);
         sources.insert("ignored".into(), "cli".into());
+    }
+
+    if cli.no_default_binds {
+        partial_config.no_default_binds = Some(true);
+        sources.insert("no_default_binds".into(), "cli".into());
+    }
+
+    // Handle bind mounts from CLI (additive)
+    if let Some(cli_bind_mounts) = cli.bind {
+        match &mut partial_config.bind_mounts {
+            Some(existing) => existing.extend(cli_bind_mounts),
+            None => partial_config.bind_mounts = Some(cli_bind_mounts),
+        }
     }
 
     // If nothing else, fill in with some default values
@@ -150,14 +171,14 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("net".into(), "default".into());
     }
 
-    let bind_fuse = partial_config.bind_fuse.unwrap_or(true);
-    if !sources.contains_key("bind_fuse") {
-        sources.insert("bind_fuse".into(), "default".into());
-    }
-
     let ignored = partial_config.ignored.unwrap_or(false);
     if !sources.contains_key("ignored") {
         sources.insert("ignored".into(), "default".into());
+    }
+
+    let no_default_binds = partial_config.no_default_binds.unwrap_or(false);
+    if !sources.contains_key("no_default_binds") {
+        sources.insert("no_default_binds".into(), "default".into());
     }
 
     let storage_dir = resolve_sandbox_storage_dir(
@@ -192,10 +213,39 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         .join(cwd.strip_prefix(&mp)?);
     sources.insert("overlay_cwd".into(), "derived from storage_dir".into());
 
+    // Collect all bind mounts including defaults
+    let mut all_bind_mounts = vec![];
+
+    // Add default bind mounts unless disabled
+    if !no_default_binds {
+        let default_binds = get_default_bind_mounts(&net, &uid_gid_home);
+        all_bind_mounts.extend(default_binds);
+    }
+
+    if let Some(bind_mounts) = partial_config.bind_mounts {
+        all_bind_mounts.extend(bind_mounts);
+    }
+
+    // Deduplicate bind mounts, preserving order
+    let mut bind_set: HashSet<String> = HashSet::new();
+    let bind_mounts: Vec<String> = all_bind_mounts
+        .into_iter()
+        .filter(|mount| {
+            if bind_set.contains(mount.as_str()) {
+                return false;
+            }
+            bind_set.insert(mount.clone());
+            true
+        })
+        .collect();
+
+    if bind_mounts.is_empty() {
+        sources.insert("bind_mounts".into(), "default".into());
+    }
+
     let config = Config {
         name,
         net,
-        bind_fuse,
         storage_dir,
         sandbox_dir,
         upper_cwd,
@@ -203,6 +253,8 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         log_level: partial_config.log_level.unwrap_or(log::LevelFilter::Info),
         ignored,
         sources,
+        bind_mounts,
+        no_default_binds,
     };
 
     validate_config(&config)?;
@@ -211,6 +263,68 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     trace!("Sandbox: {:?}", config.name);
 
     Ok(config)
+}
+
+fn get_default_bind_mounts(
+    net: &Network,
+    uid_gid_home: &UidGidHome,
+) -> Vec<String> {
+    let mut default_binds = Vec::new();
+
+    // System binds
+
+    // /dev/fuse - for AppImages and FUSE filesystems
+    if Path::new("/dev/fuse").exists() {
+        default_binds.push("/dev/fuse".to_string());
+    }
+
+    // D-Bus and systemd sockets (only when using host networking)
+    if matches!(net, Network::Host) {
+        // System D-Bus
+        if Path::new("/run/dbus").exists() {
+            default_binds.push("/run/dbus".to_string());
+        }
+
+        // User D-Bus from XDG_RUNTIME_DIR
+        let xdg_runtime_dir =
+            env::var("XDG_RUNTIME_DIR").ok().filter(|s| !s.is_empty());
+
+        #[cfg(feature = "coverage")]
+        let xdg_runtime_dir =
+            if std::env::var_os("TEST_EMPTY_XDG_RUNTIME_DIR").is_some() {
+                None
+            } else {
+                xdg_runtime_dir
+            };
+
+        if let Some(xdg_runtime_dir) = xdg_runtime_dir {
+            let bus_path = Path::new(&xdg_runtime_dir).join("bus");
+            if bus_path.exists() {
+                default_binds.push(bus_path.to_string_lossy().to_string());
+            }
+        }
+
+        // Systemd
+        if Path::new("/run/systemd").exists() {
+            default_binds.push("/run/systemd".to_string());
+        }
+    }
+
+    // User directories for AI coding assistants
+    let user_dirs = [
+        ".claude", // Claude artifacts and settings
+        ".aider",  // Aider chat history and settings
+        ".cursor", // Cursor settings
+    ];
+
+    for dir in &user_dirs {
+        let user_dir = uid_gid_home.home.join(dir);
+        if user_dir.exists() {
+            default_binds.push(format!("{}", user_dir.display()));
+        }
+    }
+
+    default_binds
 }
 
 pub fn resolve_sandbox_storage_dir(
@@ -425,17 +539,20 @@ fn merge_configs(
         base.net = Some(net);
         sources.insert("net".into(), source.into());
     }
-    if let Some(bind_fuse) = override_config.bind_fuse {
-        base.bind_fuse = Some(bind_fuse);
-        sources.insert("bind_fuse".into(), source.into());
-    }
     if let Some(ignored) = override_config.ignored {
         base.ignored = Some(ignored);
         sources.insert("ignored".into(), source.into());
     }
-    if let Some(bind_fuse) = override_config.bind_fuse {
-        base.bind_fuse = Some(bind_fuse);
-        sources.insert("bind_fuse".into(), source.into());
+    if let Some(no_default_binds) = override_config.no_default_binds {
+        base.no_default_binds = Some(no_default_binds);
+        sources.insert("no_default_binds".into(), source.into());
+    }
+    // Handle bind_mounts additively
+    if let Some(bind_mounts) = override_config.bind_mounts {
+        match &mut base.bind_mounts {
+            Some(existing) => existing.extend(bind_mounts),
+            None => base.bind_mounts = Some(bind_mounts),
+        }
     }
 }
 
@@ -476,7 +593,7 @@ fn generate_timestamp_name(
         #[cfg(feature = "coverage")]
         let name_with_ms =
             if std::env::var_os("TEST_NAME_WITH_MS").is_some() && iter == 0 {
-                format!("{}", std::env::var("TEST_NAME_WITH_MS").unwrap())
+                std::env::var("TEST_NAME_WITH_MS").unwrap()
             } else {
                 name_with_ms
             };
@@ -554,6 +671,61 @@ mod tests {
     use crate::config::Network;
     use log::LevelFilter;
     use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    // Mutex to ensure XDG_RUNTIME_DIR tests don't interfere with each other
+    static XDG_TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn ai_test_get_default_bind_mounts_xdg_runtime_dir() {
+        let _guard = XDG_TEST_MUTEX.lock().unwrap();
+        use crate::types::UidGidHome;
+        use std::path::PathBuf;
+
+        let uid_gid_home = UidGidHome {
+            uid: Uid::from_raw(1000),
+            gid: Gid::from_raw(1000),
+            home: PathBuf::from("/home/test"),
+        };
+
+        // Test 1: XDG_RUNTIME_DIR is set, but TEST_EMPTY_XDG_RUNTIME_DIR overrides it
+        unsafe {
+            env::set_var("XDG_RUNTIME_DIR", "/tmp/xdg");
+            env::set_var("TEST_EMPTY_XDG_RUNTIME_DIR", "1");
+        }
+
+        let binds = get_default_bind_mounts(&Network::Host, &uid_gid_home);
+        assert!(!binds.iter().any(|b| b.contains("/tmp/xdg/bus")));
+
+        unsafe {
+            env::remove_var("TEST_EMPTY_XDG_RUNTIME_DIR");
+        }
+
+        // Test 2: XDG_RUNTIME_DIR is not set
+        unsafe {
+            env::remove_var("XDG_RUNTIME_DIR");
+        }
+
+        let binds = get_default_bind_mounts(&Network::Host, &uid_gid_home);
+        assert!(!binds.iter().any(|b| b.contains("/bus")));
+
+        // Test 3: XDG_RUNTIME_DIR is set to a test path that doesn't exist
+        unsafe {
+            env::set_var("XDG_RUNTIME_DIR", "/tmp/test_xdg_runtime_dir");
+        }
+
+        // Since /tmp/test_xdg_runtime_dir/bus won't exist, it shouldn't be included
+        let binds = get_default_bind_mounts(&Network::Host, &uid_gid_home);
+        assert!(
+            !binds
+                .iter()
+                .any(|b| b.contains("/tmp/test_xdg_runtime_dir/bus"))
+        );
+
+        // Test 4: Test with Network::None (should not include any XDG bus)
+        let binds = get_default_bind_mounts(&Network::None, &uid_gid_home);
+        assert!(!binds.iter().any(|b| b.contains("/bus")));
+    }
 
     #[test]
     fn test_validate_config() {
@@ -565,9 +737,10 @@ mod tests {
             overlay_cwd: PathBuf::from("/tmp/test"),
             net: Network::Host,
             sources: HashMap::new(),
-            bind_fuse: true,
             ignored: false,
             log_level: LevelFilter::Info,
+            bind_mounts: vec![],
+            no_default_binds: false,
         };
         assert!(validate_config(&config).is_ok());
         config.name = "../test-sandbox".to_string();
@@ -586,25 +759,56 @@ mod tests {
     fn test_merge_configs() {
         let mut base = PartialConfig::default();
         let mut sources = HashMap::new();
+        let mut base_with_binds = PartialConfig {
+            bind_mounts: Some(vec!["/tmp/test1".to_string()]),
+            ..PartialConfig::default()
+        };
 
         let override_config = PartialConfig {
             log_level: Some(LevelFilter::Debug),
             name: Some("test-sandbox".to_string()),
             storage_dir: Some("/tmp/test".to_string()),
             net: Some(Network::Host),
-            bind_fuse: Some(false),
             ignored: Some(true),
+            bind_mounts: Some(vec![
+                "/tmp/test1".to_string(),
+                "/tmp/test2".to_string(),
+            ]),
+            no_default_binds: Some(true),
         };
 
-        merge_configs(&mut base, &mut sources, override_config, "test-config");
+        merge_configs(
+            &mut base,
+            &mut sources,
+            override_config.clone(),
+            "test-config",
+        );
+        merge_configs(
+            &mut base_with_binds,
+            &mut sources,
+            override_config,
+            "test-config",
+        );
 
         // Verify all fields were merged
         assert_eq!(base.log_level, Some(LevelFilter::Debug));
         assert_eq!(base.name, Some("test-sandbox".to_string()));
         assert_eq!(base.storage_dir, Some("/tmp/test".to_string()));
         assert!(matches!(base.net, Some(Network::Host)));
-        assert_eq!(base.bind_fuse, Some(false));
         assert_eq!(base.ignored, Some(true));
+        assert_eq!(
+            base.bind_mounts,
+            Some(vec!["/tmp/test1".to_string(), "/tmp/test2".to_string()])
+        );
+        assert_eq!(
+            base_with_binds.bind_mounts,
+            Some(vec![
+                "/tmp/test1".to_string(),
+                "/tmp/test1".to_string(),
+                "/tmp/test2".to_string(),
+            ])
+        );
+        assert_eq!(base.no_default_binds, Some(true));
 
         // Verify sources tracking
         assert_eq!(sources.get("log_level"), Some(&"test-config".to_string()));
@@ -614,7 +818,10 @@ mod tests {
             Some(&"test-config".to_string())
         );
         assert_eq!(sources.get("net"), Some(&"test-config".to_string()));
-        assert_eq!(sources.get("bind_fuse"), Some(&"test-config".to_string()));
         assert_eq!(sources.get("ignored"), Some(&"test-config".to_string()));
+        assert_eq!(
+            sources.get("no_default_binds"),
+            Some(&"test-config".to_string())
+        );
     }
 }

@@ -232,7 +232,7 @@ You can also set most of the options with environment variables if you wish:
   SANDBOX_NAME="my-sandbox"
   SANDBOX_STORAGE_DIR="/path/to/sandbox/storage"
   SANDBOX_NET="none"
-  SANDBOX_BIND_FUSE="true"
+  SANDBOX_BIND_MOUNTS="/dev/fuse"
   SANDBOX_LOG_LEVEL="info"
 ```
 

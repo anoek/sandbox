@@ -13,11 +13,13 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
             "name",
             "net",
             "log_level",
-            "bind_fuse",
+            "bind_mounts",
+            "no_default_binds",
             "storage_dir",
             "sandbox_dir",
             "upper_cwd",
             "overlay_cwd",
+            "ignored",
         ]
         .map(String::from)
         .to_vec()
@@ -25,7 +27,9 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
     let multi_line = keys.len() > 1;
 
     let net_str = format!("{}", config.net);
-    let bind_fuse_str = format!("{}", config.bind_fuse);
+    let bind_mounts_str = format!("{:?}", config.bind_mounts);
+    let no_default_binds_str = format!("{}", config.no_default_binds);
+    let ignored_str = format!("{}", config.ignored);
     for key in keys {
         let (key, value) = match key.as_str() {
             "storage_dir" | "storage-dir" => (
@@ -44,9 +48,13 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
                 config.overlay_cwd.to_str().unwrap_or("<error>"),
             ),
             "net" => ("net", net_str.as_str()),
-            "bind_fuse" => ("bind_fuse", bind_fuse_str.as_str()),
+            "bind_mounts" => ("bind_mounts", bind_mounts_str.as_str()),
+            "no_default_binds" => {
+                ("no_default_binds", no_default_binds_str.as_str())
+            }
             "name" => ("name", config.name.as_str()),
             "log_level" => ("log_level", config.log_level.as_str()),
+            "ignored" => ("ignored", ignored_str.as_str()),
             _ => {
                 return Err(anyhow::anyhow!("Unknown key: {}", key));
             }

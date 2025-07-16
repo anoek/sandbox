@@ -3,7 +3,7 @@ mod delete;
 mod exec;
 mod exists;
 mod get_or_create;
-mod mount;
+mod mount_overlays;
 mod sandbox_struct;
 mod stop;
 mod unmount;

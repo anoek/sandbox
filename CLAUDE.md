@@ -61,10 +61,7 @@ to track file changes and allows selective acceptance of modifications.
 
 -   Integration tests in `tests/` directory
 -   Test fixtures in `tests/fixtures/`
--   100% line coverage requirement for PRs
--   VM-based testing infrastructure in `vm-testing/` for cross-platform validation
-
-## Important Implementation Notes
+-   100% line coverage requirement for PRs VM-based testing infrastructure in `vm-testing/` for cross-platform validation ## Important Implementation Notes
 
 1. **Privilege Handling**: The binary requires setuid root for namespace operations. The Makefile handles this during build.
 
@@ -81,3 +78,5 @@ to track file changes and allows selective acceptance of modifications.
 4. **Coverage Requirements**: All PRs must maintain very high test coverage. Use `make coverage-check` to verify.
 
 5. **Cross-Platform**: Supports x86_64 and aarch64 architectures with both GNU and musl libc variants.
+
+6. **New tests**: New tests should be added to the `tests/` directory with a filename prefixed with `ai_test_`. Most tests should use the default name provided by the SandboxManager, if you provide a name, it needs to be prefixed with `sandbox-coverage`.

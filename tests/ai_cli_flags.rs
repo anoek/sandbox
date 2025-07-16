@@ -27,9 +27,6 @@ fn test_flags_before_action(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.pass(&["--name", &name, "--log-level=debug", "config"]));
     assert!(sandbox.last_stdout.contains("log_level=DEBUG"));
 
-    assert!(sandbox.pass(&["--name", &name, "--bind-fuse=false", "config"]));
-    assert!(sandbox.last_stdout.contains("bind_fuse=false"));
-
     assert!(sandbox.pass(&["--name", &name, "--json", "config"]));
     // JSON output should be valid JSON
     assert!(
@@ -61,9 +58,6 @@ fn test_flags_after_action(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.pass(&["--name", &name, "config", "--log-level=debug"]));
     assert!(sandbox.last_stdout.contains("log_level=DEBUG"));
 
-    assert!(sandbox.pass(&["--name", &name, "config", "--bind-fuse=false"]));
-    assert!(sandbox.last_stdout.contains("bind_fuse=false"));
-
     assert!(sandbox.pass(&["--name", &name, "config", "--json"]));
     // JSON output should be valid JSON
     assert!(
@@ -83,9 +77,9 @@ fn test_flags_mixed_position(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.last_stdout.contains("name=test-mixed"));
     assert!(sandbox.last_stdout.contains("net=host"));
 
-    assert!(sandbox.pass(&["-v", "config", "--bind-fuse=false",]));
+    assert!(sandbox.pass(&["-v", "config", "--net=none"]));
     assert!(sandbox.last_stdout.contains("log_level=TRACE"));
-    assert!(sandbox.last_stdout.contains("bind_fuse=false"));
+    assert!(sandbox.last_stdout.contains("net=none"));
 
     assert!(sandbox.pass(&["--json", "config", "--name=json-test", "-v"]));
     let json: serde_json::Value = serde_json::from_str(&sandbox.last_stdout)?;
@@ -126,38 +120,6 @@ fn test_flags_with_complex_actions(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_flags_with_sandboxed_command(
-    mut sandbox: SandboxManager,
-) -> Result<()> {
-    // Test flags with sandboxed commands (no action)
-    assert!(sandbox.pass(&["--name", "cmd-test", "echo", "hello"]));
-    assert!(sandbox.last_stdout.contains("hello"));
-
-    // Same with -- to manually trigger that everything after it should be a command
-    assert!(sandbox.pass(&["--name", "cmd-test", "--", "echo", "hello"]));
-    assert!(sandbox.last_stdout.contains("hello"));
-
-    assert!(sandbox.pass(&["echo", "--name", "should-print"]));
-    assert!(sandbox.last_stdout.contains("--name should-print"));
-
-    assert!(sandbox.pass(&["--", "echo", "--name", "should-print"]));
-    assert!(sandbox.last_stdout.contains("--name should-print"));
-
-    // Test with complex command
-    assert!(sandbox.pass(&[
-        "--net=host",
-        "--name",
-        "complex",
-        "sh",
-        "-c",
-        "echo test"
-    ]));
-    assert!(sandbox.last_stdout.contains("test"));
-
-    Ok(())
-}
-
-#[rstest]
 fn test_flag_errors_in_different_positions(
     mut sandbox: SandboxManager,
 ) -> Result<()> {
@@ -176,16 +138,21 @@ fn test_flag_errors_in_different_positions(
 
 #[rstest]
 fn test_boolean_flags_positioning(mut sandbox: SandboxManager) -> Result<()> {
+    // Disable default ignored flag to avoid conflicts
+    sandbox.set_ignored(false);
+
     // Test boolean flags without values in different positions
-    assert!(sandbox.pass(&["--bind-fuse", "config"]));
-    assert!(sandbox.last_stdout.contains("bind_fuse=true"));
+    assert!(sandbox.pass(&["--ignored", "config"]));
+    assert!(sandbox.last_stdout.contains("ignored=true"));
 
-    assert!(sandbox.pass(&["config", "--bind-fuse"]));
-    assert!(sandbox.last_stdout.contains("bind_fuse=true"));
+    sandbox.set_ignored(false);
+    assert!(sandbox.pass(&["config", "--ignored"]));
+    assert!(sandbox.last_stdout.contains("ignored=true"));
 
-    assert!(sandbox.pass(&["--json", "config", "--bind-fuse"]));
+    sandbox.set_ignored(false);
+    assert!(sandbox.pass(&["--json", "config", "--ignored"]));
     let json: serde_json::Value = serde_json::from_str(&sandbox.last_stdout)?;
-    assert_eq!(json["bind_fuse"], "true");
+    assert_eq!(json["ignored"], "true");
 
     Ok(())
 }

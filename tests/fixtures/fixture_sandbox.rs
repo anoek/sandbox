@@ -18,7 +18,25 @@ pub fn rid() -> String {
 }
 
 pub fn get_sandbox_bin() -> String {
-    let project_root = std::env::current_dir().unwrap();
+    // Get the original working directory when the tests start
+    // This is needed because tests may change directories
+    let cargo_manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
+        .unwrap_or_else(|_| {
+            // Fallback: try to find the project root by looking for Cargo.toml
+            let mut current = std::env::current_dir().unwrap();
+            loop {
+                if current.join("Cargo.toml").exists() {
+                    break current.to_string_lossy().to_string();
+                }
+                if let Some(parent) = current.parent() {
+                    current = parent.to_path_buf();
+                } else {
+                    panic!("Could not find project root");
+                }
+            }
+        });
+
+    let project_root = Path::new(&cargo_manifest_dir);
 
     let bin = if let Ok(current_exe) = std::env::current_exe() {
         if current_exe.to_string_lossy().contains("/coverage/") {
@@ -31,9 +49,11 @@ pub fn get_sandbox_bin() -> String {
         "target/debug/sandbox"
     };
 
-    let path = Path::new(&project_root).join(bin);
-    println!("Path: {}", path.to_string_lossy());
-    path.to_string_lossy().to_string()
+    let path = project_root.join(bin);
+    // Convert to absolute path
+    let absolute_path = path.canonicalize().unwrap_or_else(|_| path.clone());
+    println!("Path: {}", absolute_path.to_string_lossy());
+    absolute_path.to_string_lossy().to_string()
 }
 
 pub struct SandboxManager {
@@ -397,6 +417,15 @@ impl Drop for SandboxManager {
                 // may have already been cleaned up by the delete functionality
                 if e.kind() != std::io::ErrorKind::NotFound {
                     warn!("Failed to remove {} dir: {}", dirname.display(), e);
+                }
+            }
+            let sandbox_name = self.name.clone();
+            match self.run(&["delete", "-y", sandbox_name.as_str()]) {
+                Ok(_) => (),
+                Err(e) => {
+                    warn!("Failed to delete sandbox: {}", e);
+                    warn!("last_stderr: {}", self.last_stderr);
+                    warn!("last_stdout: {}", self.last_stdout);
                 }
             }
         } else {

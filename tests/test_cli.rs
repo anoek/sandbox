@@ -23,15 +23,6 @@ fn test_cli(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.pass(&["--name=test-cli", "config"]));
     assert!(sandbox.last_stdout.contains("name=test-cli"));
 
-    assert!(sandbox.pass(&["--bind-fuse", "config"]));
-    assert!(sandbox.last_stdout.contains("bind_fuse=true"));
-
-    assert!(sandbox.pass(&["--bind-fuse=false", "config"]));
-    assert!(sandbox.last_stdout.contains("bind_fuse=false"));
-
-    assert!(sandbox.xfail(&["--bind-fuse=invalid", "config"]));
-    assert!(sandbox.last_stderr.contains("invalid"));
-
     assert!(sandbox.pass(&["--storage-dir=/tmp/sandbox", "config"]));
     assert!(sandbox.last_stdout.contains("storage_dir=/tmp/sandbox"));
 
@@ -43,7 +34,6 @@ fn test_cli(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.pass(&["--no-config", "config"]));
     assert!(sandbox.last_stdout.contains("name=sandbox"));
     assert!(sandbox.last_stdout.contains("net=none"));
-    assert!(sandbox.last_stdout.contains("bind_fuse=true"));
 
     Ok(())
 }
@@ -55,12 +45,14 @@ fn test_cli_with_config(mut sandbox: SandboxManager) -> Result<()> {
     name = "parent"
     log_level = "trace"
     storage_dir = "/tmp/sandbox1"
+    bind = [".cargo"]
     "#;
     let config = r#"
     net = "host"
     name = "test-cli-with-config"
     log_level = "info"
     storage_dir = "/tmp/sandbox2"
+    bind = [".cargo"]
     "#;
 
     let _ = std::fs::remove_file(".sandbox.toml");
@@ -68,15 +60,16 @@ fn test_cli_with_config(mut sandbox: SandboxManager) -> Result<()> {
 
     std::fs::write("../.sandbox.conf", parent_config)?;
     sandbox.no_default_options = true;
-    assert!(sandbox.pass(&["config"]));
+    assert!(sandbox.epass(&["config"], "SANDBOX_BIND_MOUNTS", ".cargo"));
     assert!(sandbox.last_stdout.contains("name=parent"));
     assert!(sandbox.last_stdout.contains("net=none"));
     assert!(sandbox.last_stdout.contains("log_level=TRACE"));
     assert!(sandbox.last_stdout.contains("storage_dir=/tmp/sandbox1"));
+    assert!(sandbox.last_stdout.contains(".cargo"));
 
     std::fs::write(".sandbox.toml", config)?;
     sandbox.no_default_options = true;
-    assert!(sandbox.pass(&["config"]));
+    assert!(sandbox.pass(&["config", "--bind=.cargo"]));
     assert!(sandbox.last_stdout.contains("name=test-cli-with-config"));
     assert!(sandbox.last_stdout.contains("net=host"));
     println!("{}", sandbox.last_stdout);
@@ -111,14 +104,6 @@ fn test_cli_with_env(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.epass(&["config"], "SANDBOX_STORAGE_DIR", ""));
     assert!(sandbox.epass(&["config"], "SANDBOX_STORAGE_DIR", "/tmp/sandbox"));
     assert!(sandbox.last_stdout.contains("storage_dir=/tmp/sandbox"));
-
-    assert!(sandbox.epass(&["config"], "SANDBOX_BIND_FUSE", ""));
-    assert!(sandbox.epass(&["config"], "SANDBOX_BIND_FUSE", "true"));
-    assert!(sandbox.last_stdout.contains("bind_fuse=true"));
-    assert!(sandbox.epass(&["config"], "SANDBOX_BIND_FUSE", "false"));
-    assert!(sandbox.last_stdout.contains("bind_fuse=false"));
-    assert!(sandbox.exfail(&["config"], "SANDBOX_BIND_FUSE", "invalid"));
-    assert!(sandbox.last_stderr.contains("Invalid bind_fuse: invalid"));
 
     Ok(())
 }

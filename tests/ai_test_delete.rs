@@ -513,7 +513,8 @@ fn test_delete_with_modifications() -> Result<()> {
 
     // Create sandbox and make some modifications
     sandbox.run(&["true"])?;
-    sandbox.run(&["sh", "-c", "echo 'test' > /tmp/test_file"])?;
+    let test_file = sandbox.test_filename("test_file");
+    sandbox.run(&["sh", "-c", &format!("echo 'test' > {}", test_file)])?;
 
     // Delete with -y flag just shows success messages
     sandbox.run(&["delete", "-y", &name])?;

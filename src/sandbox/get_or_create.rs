@@ -1,4 +1,4 @@
-use super::mount::MountHash;
+use super::mount_overlays::MountHash;
 use crate::config::Config;
 use crate::config::Network;
 use crate::sandbox::Sandbox;
@@ -148,15 +148,15 @@ impl Sandbox {
         )?;
 
         trace!("Mounting sandbox");
-        let mounts = sandbox
-            .mount()
+        let overlay_mounts = sandbox
+            .mount_overlays()
             .context(format!("failed to mount sandbox: {}", sandbox_name))?;
 
         /* Create PID 1 for our sandbox */
         sandbox.pid = match sandbox.start_sandbox(
             config,
             &get_sandbox_pid_path(storage_dir, sandbox_name),
-            &mounts,
+            &overlay_mounts,
         ) {
             Ok(pid) => pid,
             Err(e) => {
@@ -175,7 +175,7 @@ impl Sandbox {
         &self,
         config: &Config,
         pid_file: &PathBuf,
-        mounts: &Vec<MountHash>,
+        overlay_mounts: &Vec<MountHash>,
     ) -> Result<Pid> {
         // create a pipe between ourselves and the main sandbox process so the main sandbox process can
         // let us know when it's done setting up the namespaces
@@ -244,7 +244,11 @@ impl Sandbox {
 
             // Normal operation is that this doesn't return.
             let _ = self
-                .setup_sandbox_and_sleep_forever(config, &write_fd, mounts)
+                .setup_sandbox_and_sleep_forever(
+                    config,
+                    &write_fd,
+                    overlay_mounts,
+                )
                 .map_err(|e| {
                     error!("Failed to setup sandbox: {}", e);
                     e
@@ -347,8 +351,7 @@ impl Sandbox {
             old_root_host_path.display()
         ))?;
 
-        /* Prepare /dev here so that we can bind /dev/fuse if we need to.
-         * This needs to happen before we pivot_root. */
+        /* Prepare /dev tmpfs mount */
         let new_root_dev = new_root.join("dev");
         mount(
             Some("none"),
@@ -358,28 +361,7 @@ impl Sandbox {
             Some(format!("mode=0755,size={}", TMPFS_SIZE)),
         )?;
 
-        /* Bind /dev/fuse if we have it enabled */
-        if config.bind_fuse && Path::new("/dev/fuse").exists() {
-            let new_root_dev_fuse = new_root.join("dev").join("fuse");
-            std::fs::write(&new_root_dev_fuse, "").context(format!(
-                "Failed to create {}",
-                new_root_dev_fuse.display()
-            ))?;
-            mount(
-                Some("/dev/fuse"),
-                &new_root_dev_fuse,
-                Some("bind"),
-                MsFlags::MS_BIND,
-                null,
-            )
-            .context(format!(
-                "failed to bind /dev/fuse to {}",
-                new_root_dev_fuse.display()
-            ))?;
-        }
-
-        /* Prepare /run here so that we can bind /run/dbus and /run/systemd if we need to. This
-         * needs to happen before we pivot_root. */
+        /* Prepare /run tmpfs mount */
         let new_root_run = new_root.join("run");
         mount(
             Some("none"),
@@ -389,92 +371,126 @@ impl Sandbox {
             Some(format!("mode=0755,size={}", TMPFS_SIZE)),
         )?;
 
-        /* Bind D-Bus sockets if using host networking */
-        if matches!(config.net, Network::Host)
-            && Path::new("/run/dbus").exists()
-        {
-            trace!("Binding system bus");
-            let new_root_run_dbus = new_root_run.join("dbus");
+        /* Create staging directory for bind mounts */
+        let bind_staging_uuid = Uuid::new_v4();
+        // Create staging directory in /run (tmpfs) instead of root to avoid
+        // creating entries in the overlay filesystem
+        let bind_staging_dir = PathBuf::from(format!(
+            "/run/bind-mounts-staging-{}",
+            bind_staging_uuid
+        ));
+        let bind_staging_dir_host = new_root_run
+            .join(format!("bind-mounts-staging-{}", bind_staging_uuid));
 
-            mkdir(
-                &new_root_run_dbus,
-                nix::unistd::Uid::from_raw(0),
-                nix::unistd::Gid::from_raw(0),
-            )?;
+        // Track bind mount information for later relocation
+        struct BindMountInfo {
+            staging_path: PathBuf,
+            final_target: PathBuf,
+            is_dir: bool,
+        }
+        let mut bind_mount_infos: Vec<BindMountInfo> = Vec::new();
 
+        std::fs::create_dir(&bind_staging_dir_host).context(format!(
+            "Failed to create bind mount staging directory {}",
+            bind_staging_dir_host.display()
+        ))?;
+
+        /* Handle bind mounts from config - stage them temporarily */
+        for (idx, bind_mount) in config.bind_mounts.iter().enumerate() {
+            trace!("Processing bind mount {}", bind_mount);
+            let mut parts: Vec<&str> = bind_mount.splitn(3, ':').collect();
+
+            if parts.len() < 2 {
+                parts.push(parts[0]);
+            }
+            parts[1] = if parts[1].is_empty() {
+                parts[0]
+            } else {
+                parts[1]
+            };
+            if parts.len() < 3 {
+                parts.push("rw");
+            }
+
+            let (source_path, target_path, is_readonly) = (
+                Path::new(parts[0]),
+                Path::new(parts[1]),
+                parts[2] == "ro" || parts[2] == "readonly",
+            );
+
+            // Resolve source to absolute path
+            let source = source_path.canonicalize().context(format!(
+                "failed to canonicalize source path: {}",
+                source_path.display()
+            ))?;
+            let canonicalized_target =
+                target_path.canonicalize().context(format!(
+                    "failed to canonicalize target path: {}",
+                    target_path.display()
+                ))?;
+
+            let is_dir = source.is_dir();
+
+            // Create staging path
+            let staging_name = format!("mount-{}", idx);
+            let staging_path_container = bind_staging_dir.join(&staging_name);
+            let staging_path_host = bind_staging_dir_host.join(&staging_name);
+
+            // Create the staging target file or directory
+            if is_dir {
+                mkdir(&staging_path_host, self.uid, self.gid)?;
+            } else {
+                std::fs::write(&staging_path_host, "").context(format!(
+                    "Failed to create staging file {}",
+                    staging_path_host.display()
+                ))?;
+            }
+
+            // Special case: /run/systemd is always read-only for security
+            let is_readonly =
+                is_readonly || source_path == Path::new("/run/systemd");
+
+            // First perform the bind mount without read-only flag
             mount(
-                Some("/run/dbus"),
-                &new_root_run_dbus,
+                Some(&source),
+                &staging_path_host,
                 Some("bind"),
                 MsFlags::MS_BIND,
                 null,
             )
             .context(format!(
-                "failed to bind mount /run/dbus to {}",
-                new_root_run_dbus.display()
+                "Failed to bind mount {} to staging path {}",
+                source.display(),
+                staging_path_host.display()
             ))?;
-        }
 
-        if matches!(config.net, Network::Host) {
-            if let Ok(xdg_runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
-                let bus_path = Path::new(&xdg_runtime_dir).join("bus");
-                if bus_path.exists() {
-                    trace!("Binding user bus from XDG_RUNTIME_DIR");
-
-                    let uid_dir = format!("user/{}", self.uid);
-                    let new_root_run_user = new_root_run.join(&uid_dir);
-
-                    mkdir(&new_root_run_user, self.uid, self.gid)?;
-
-                    let new_root_bus = new_root_run_user.join("bus");
-                    std::fs::write(&new_root_bus, "").context(format!(
-                        "Failed to create {}",
-                        new_root_bus.display()
-                    ))?;
-
-                    mount(
-                        Some(&bus_path),
-                        &new_root_bus,
-                        Some("bind"),
-                        MsFlags::MS_BIND,
-                        null,
-                    )
-                    .context(format!(
-                        "failed to bind mount {} to {}",
-                        bus_path.display(),
-                        new_root_bus.display()
-                    ))?;
-                }
+            // For read-only mounts, immediately remount with read-only flag
+            if is_readonly {
+                // Remount as read-only
+                mount(
+                    Some("none"),
+                    &staging_path_host,
+                    Some("bind"),
+                    MsFlags::MS_BIND
+                        | MsFlags::MS_REMOUNT
+                        | MsFlags::MS_RDONLY
+                        | MsFlags::MS_NOSUID,
+                    null,
+                )?;
             }
-        }
 
-        /* Unclear if we need to put this behind a net=host check, the primary use case
-         * I know if is letting symlinks for resolv.conf to work, so in that regard it
-         * makes sense, but there may be a plethora of other things that are used that
-         * make it so this should always need to be done if it exists. */
-        if matches!(config.net, Network::Host)
-            && Path::new("/run/systemd").exists()
-        {
-            trace!("Binding systemd");
-            let new_root_run_systemd = new_root_run.join("systemd");
+            trace!(
+                "Bind mounted {} to staging path {}",
+                source.display(),
+                staging_path_host.display()
+            );
 
-            mkdir(
-                &new_root_run_systemd,
-                nix::unistd::Uid::from_raw(0),
-                nix::unistd::Gid::from_raw(0),
-            )?;
-
-            mount(
-                Some("/run/systemd"),
-                &new_root_run_systemd,
-                Some("bind"),
-                MsFlags::MS_BIND | MsFlags::MS_NOSUID | MsFlags::MS_RDONLY,
-                null,
-            )
-            .context(format!(
-                "failed to bind mount /run/systemd to {}",
-                new_root_run_systemd.display()
-            ))?;
+            // Store info for later relocation
+            bind_mount_infos.push(BindMountInfo {
+                staging_path: staging_path_container,
+                final_target: canonicalized_target.to_path_buf(),
+                is_dir,
+            });
         }
 
         /* Pivot (similar to chroot in effect) */
@@ -722,6 +738,101 @@ impl Sandbox {
             .context(format!("failed to remount {} read-only", path))?;
         }
 
+        /* Finalize bind mounts by re-binding them to their final destination now that the rest of
+         * our file system is reconstructed. */
+        for bind_info in &bind_mount_infos {
+            trace!(
+                "Relocating bind mount from {} to {}",
+                bind_info.staging_path.display(),
+                bind_info.final_target.display()
+            );
+
+            let final_target = PathBuf::from("/").join(
+                bind_info
+                    .final_target
+                    .strip_prefix("/")
+                    .unwrap_or(&bind_info.final_target),
+            );
+
+            final_target
+                .parent()
+                .map(|parent| {
+                    std::fs::create_dir_all(parent).context(format!(
+                        "Failed to create parent directories for {}",
+                        final_target.display()
+                    ))
+                })
+                .transpose()?;
+
+            // Create the target file or directory only if it doesn't exist
+            // This prevents creating entries in the overlay's upper layer when
+            // the target already exists in the lower layers
+            if !final_target.exists() {
+                if bind_info.is_dir {
+                    mkdir(&final_target, self.uid, self.gid)?;
+                } else {
+                    std::fs::write(&final_target, "").context(format!(
+                        "Failed to create target file {}",
+                        final_target.display()
+                    ))?;
+                }
+            }
+
+            // Bind mount from staging to final location
+            // Since the staging mount is already configured with the correct flags (including read-only),
+            // we just need a simple bind mount here
+            mount(
+                Some(&bind_info.staging_path),
+                &final_target,
+                Some("bind"),
+                MsFlags::MS_BIND,
+                null,
+            )
+            .context(format!(
+                "Failed to relocate bind mount from {} to {}",
+                bind_info.staging_path.display(),
+                final_target.display()
+            ))?;
+
+            trace!(
+                "Successfully relocated bind mount to {}",
+                final_target.display()
+            );
+        }
+
+        /* Clean up staging directory if we created one */
+        // First unmount all staging mounts
+        for bind_info in &bind_mount_infos {
+            umount2(&bind_info.staging_path, MntFlags::MNT_DETACH).context(
+                format!(
+                    "Failed to unmount staging path {}",
+                    bind_info.staging_path.display()
+                ),
+            )?;
+            if bind_info.staging_path.is_dir() {
+                std::fs::remove_dir(&bind_info.staging_path).context(
+                    format!(
+                        "Failed to remove staging path {}",
+                        bind_info.staging_path.display()
+                    ),
+                )?;
+            } else {
+                std::fs::remove_file(&bind_info.staging_path).context(
+                    format!(
+                        "Failed to remove staging file {}",
+                        bind_info.staging_path.display()
+                    ),
+                )?;
+            }
+        }
+
+        std::fs::remove_dir(&bind_staging_dir).context(format!(
+            "Failed to remove bind mount staging directory {}",
+            bind_staging_dir.display()
+        ))?;
+
+        trace!("Cleaned up bind mount staging directory");
+
         // Set our hostname
         nix::unistd::sethostname(self.name.as_str())
             .context(format!("failed to set hostname: {}", self.name))?;
@@ -763,7 +874,8 @@ impl Sandbox {
                 // Flush gcov coverage data before we spin forever
                 #[cfg(feature = "coverage")]
                 {
-                    nix::unistd::chdir(&cwd)?;
+                    let _ = nix::unistd::chdir(&cwd);
+
                     unsafe {
                         __llvm_profile_set_filename(
                             CString::new(format!("coverage/profraw/setup_sandbox-{}-{}-%m.profraw", self.pid, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()).as_str(),)
