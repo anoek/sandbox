@@ -60,7 +60,7 @@ fn test_cli_with_config(mut sandbox: SandboxManager) -> Result<()> {
 
     std::fs::write("../.sandbox.conf", parent_config)?;
     sandbox.no_default_options = true;
-    assert!(sandbox.epass(&["config"], "SANDBOX_BIND_MOUNTS", ".cargo"));
+    assert!(sandbox.epass(&["config"], "SANDBOX_BIND", ".cargo"));
     assert!(sandbox.last_stdout.contains("name=parent"));
     assert!(sandbox.last_stdout.contains("net=none"));
     assert!(sandbox.last_stdout.contains("log_level=TRACE"));

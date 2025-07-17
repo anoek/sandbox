@@ -78,7 +78,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     }
 
     // Handle bind mounts from environment variable (additive)
-    if let Ok(bind_mounts_env) = env::var("SANDBOX_BIND_MOUNTS") {
+    if let Ok(bind_mounts_env) = env::var("SANDBOX_BIND") {
         let env_bind_mounts: Vec<String> = bind_mounts_env
             .split(',')
             .map(|s| s.trim().to_string())

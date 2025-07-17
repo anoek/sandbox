@@ -67,7 +67,7 @@ fn test_bind_mount_env(mut sandbox: SandboxManager) -> Result<()> {
     // Test environment variable using run_with_env
     sandbox.run_with_env(
         &["config"],
-        "SANDBOX_BIND_MOUNTS",
+        "SANDBOX_BIND",
         &format!("{},{}", test1, test2),
     )?;
     assert!(sandbox.last_stdout.contains(&test1));
@@ -76,7 +76,7 @@ fn test_bind_mount_env(mut sandbox: SandboxManager) -> Result<()> {
     // Test environment variable with source:target format
     sandbox.run_with_env(
         &["config"],
-        "SANDBOX_BIND_MOUNTS",
+        "SANDBOX_BIND",
         &format!("{}:{}", test1, mapped1),
     )?;
     assert!(
@@ -163,7 +163,7 @@ fn test_bind_mount_env_parsing() -> Result<()> {
     // Test empty env var
     sandbox.run_with_env(
         &["--no-default-binds", "--no-config", "config"],
-        "SANDBOX_BIND_MOUNTS",
+        "SANDBOX_BIND",
         "",
     )?;
 
@@ -180,7 +180,7 @@ fn test_bind_mount_env_parsing() -> Result<()> {
 
     sandbox.run_with_env(
         &["--no-default-binds", "--no-config", "config"],
-        "SANDBOX_BIND_MOUNTS",
+        "SANDBOX_BIND",
         &format!("{},{},", test1, test2),
     )?;
 
@@ -191,7 +191,7 @@ fn test_bind_mount_env_parsing() -> Result<()> {
     // Test empty env var combined with CLI bind mount
     sandbox.run_with_env(
         &["--bind", &test1, "--no-config", "config"],
-        "SANDBOX_BIND_MOUNTS",
+        "SANDBOX_BIND",
         "",
     )?;
 
@@ -201,7 +201,7 @@ fn test_bind_mount_env_parsing() -> Result<()> {
     // Test whitespace-only env var
     sandbox.run_with_env(
         &["--no-default-binds", "--no-config", "config"],
-        "SANDBOX_BIND_MOUNTS",
+        "SANDBOX_BIND",
         "   ",
     )?;
 
@@ -227,7 +227,7 @@ fn test_bind_mount_env_with_options(mut sandbox: SandboxManager) -> Result<()> {
     // Test environment variable with read-only options
     sandbox.run_with_env(
         &["--no-default-binds", "config"],
-        "SANDBOX_BIND_MOUNTS",
+        "SANDBOX_BIND",
         &format!("{}::ro,{}::readonly", test1, test2),
     )?;
 
@@ -242,7 +242,7 @@ fn test_bind_mount_env_with_options(mut sandbox: SandboxManager) -> Result<()> {
     // Test mixed read-only and read-write mounts
     sandbox.run_with_env(
         &["--no-default-binds", "config"],
-        "SANDBOX_BIND_MOUNTS",
+        "SANDBOX_BIND",
         &format!("{},{}", test3, test4),
     )?;
 
@@ -441,7 +441,7 @@ fn test_bind_mount_env_read_only() -> Result<()> {
             "touch",
             &format!("{}/new_file.txt", env_ro),
         ],
-        "SANDBOX_BIND_MOUNTS",
+        "SANDBOX_BIND",
         &format!("{}:{}:ro", test_dir_str, env_ro),
     );
 
@@ -469,7 +469,7 @@ fn test_bind_mount_env_read_only() -> Result<()> {
 
     sandbox.run_with_env(
         &["--no-config", "config"],
-        "SANDBOX_BIND_MOUNTS",
+        "SANDBOX_BIND",
         &format!(
             "{},{}:{}:ro,{}::readonly",
             test1, test2, mapped, test_dir_str
