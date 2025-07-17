@@ -215,3 +215,10 @@ fn exercise_large_xattr(mut sandbox: SandboxManager) -> Result<()> {
 
     Ok(())
 }
+
+#[rstest]
+fn test_no_xdg() -> Result<()> {
+    let mut sandbox = SandboxManager::new();
+    assert!(sandbox.epass(&["true"], "TEST_EMPTY_XDG_RUNTIME_DIR", "1"));
+    Ok(())
+}

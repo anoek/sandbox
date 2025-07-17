@@ -44,6 +44,9 @@ fn test_kill_not_running(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.pass(&["true"]));
     assert!(sandbox.epass(&["stop"], "TEST_STOP_RACE2", "1"));
     assert!(sandbox.last_stderr.contains("Failed to kill process"));
+
+    assert!(sandbox.pass(&["true"]));
+    assert!(sandbox.epass(&["stop"], "TEST_STOP_RACE3", "1"));
     Ok(())
 }
 

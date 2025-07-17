@@ -59,6 +59,7 @@ ready-for-commit-tests:
 
 
 clean:
+	sudo chown -R $(USER) .
 	cargo clean
 	rm -Rf --one-file-system coverage dist build generated-test-data
 	sudo rm -f default*.profraw
@@ -74,7 +75,7 @@ clean-coverage-sandboxes:
 test: build-coverage-binary
 	sudo rm --one-file-system -Rf coverage
 	mkdir -p coverage/profraw
-	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage
+	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage -- --test-threads=1
 	
 coverage coverage-report: test
 	make update-coverage-report
@@ -101,10 +102,10 @@ quick-test: build-coverage-binary
 coverage/html/coverage.json: update-coverage-report
 	
 coverage-check: coverage/html/coverage.json
-	if jq -e '.message' coverage/html/coverage.json | grep -q 98; then \
-		echo "Coverage is 98%"; \
+	if jq -e '.message' coverage/html/coverage.json | grep -q 100; then \
+		echo "Coverage is 100%"; \
 	else \
-		echo "Coverage is less than 98%"; \
+		echo "Coverage is less than 100%"; \
 		exit 1; \
 	fi
 	

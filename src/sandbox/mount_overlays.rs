@@ -18,7 +18,7 @@ pub struct MountHash {
 }
 
 impl Sandbox {
-    pub fn mount(&self) -> Result<Vec<MountHash>> {
+    pub fn mount_overlays(&self) -> Result<Vec<MountHash>> {
         let system_mounts =
             unsafe { libc::setmntent(c"/proc/mounts".as_ptr(), c"r".as_ptr()) };
 

@@ -3,6 +3,7 @@ mod fixtures;
 use anyhow::Result;
 use fixtures::*;
 use rstest::*;
+use std::fs;
 use std::path::Path;
 use std::process::Command;
 
@@ -58,7 +59,7 @@ negate-me
     // Files that SHOULD be ignored
     let ignored_file = Path::new(&test_dir).join("ignored-file");
     let ignored_dir_file = Path::new(&test_dir).join("ignored-dir/a-file");
-    let ignored_tmp = Path::new(&test_dir).join("dir/tmp.tmp");
+    let ignored_tmp = Path::new(&test_dir).join("dir/temp.tmp");
     let ignored_negate_dir = Path::new(&test_dir).join("negate-me/file.txt");
     let anchored_file = Path::new(&test_dir).join("anchored-file");
 
@@ -744,22 +745,25 @@ fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
 fn test_builtin_tmp_ignore(mut sandbox: SandboxManager) -> Result<()> {
     sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
 
-    let ignored_file = format!("/tmp/builtin-ignore-{}", rid());
+    let test_dir = sandbox.test_filename("builtin_ignore");
+    fs::create_dir_all(&test_dir)?;
+    let ignore_id = rid();
+    let ignored_file = format!("{}/builtin-ignore-{}", test_dir, ignore_id);
 
     sandbox.run(&["touch", &ignored_file])?;
 
-    sandbox.run(&["status", "/"])?;
+    sandbox.run(&["status", &test_dir])?;
     let stdout = sandbox.last_stdout.clone();
 
-    assert!(!stdout.contains(&ignored_file));
+    assert!(!stdout.contains(&format!("builtin-ignore-{}", ignore_id)));
 
     // with --ignored
     sandbox.set_ignored(true);
-    sandbox.run(&["status", "/"])?;
+    sandbox.run(&["status", &test_dir])?;
     let stdout_flag = sandbox.last_stdout.clone();
     sandbox.set_ignored(false);
 
-    assert!(stdout_flag.contains(&ignored_file));
+    assert!(stdout_flag.contains(&format!("builtin-ignore-{}", ignore_id)));
 
     Ok(())
 }

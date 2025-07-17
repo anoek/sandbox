@@ -10,15 +10,17 @@ pub enum Network {
     Host,
 }
 
-#[derive(Deserialize, Default)]
+#[derive(Deserialize, Default, Clone)]
 pub struct PartialConfig {
     #[serde(deserialize_with = "deserialize_level_filter", default)]
     pub log_level: Option<log::LevelFilter>,
     pub name: Option<String>,
     pub storage_dir: Option<String>,
     pub net: Option<Network>,
-    pub bind_fuse: Option<bool>,
     pub ignored: Option<bool>,
+    #[serde(rename = "bind", default)]
+    pub bind_mounts: Option<Vec<String>>,
+    pub no_default_binds: Option<bool>,
 }
 
 #[derive(Clone)]
@@ -31,6 +33,7 @@ pub struct Config {
     pub overlay_cwd: PathBuf,
     pub net: Network,
     pub sources: HashMap<String, String>,
-    pub bind_fuse: bool,
     pub ignored: bool,
+    pub bind_mounts: Vec<String>,
+    pub no_default_binds: bool,
 }

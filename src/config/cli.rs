@@ -51,19 +51,20 @@ pub struct Args {
         )]
     pub net: Option<Network>,
 
-    /// Specify if you want to bind /dev/fuse within the sandbox. Disabling this will prevent
-    /// appimages and FUSE-based filesystems from working, but may be considered more secure
-    /// depending on your situation.
+    /// Bind mount directories or files into the sandbox. Can be specified multiple times.
+    /// Format: source:target or just path (mounts to same path). Multiple paths can be
+    /// specified by using --bind multiple times or as a comma-separated list.
     #[arg(
         long,
         global = true,
-        action = clap::ArgAction::Set,
-        value_parser = clap::value_parser!(bool),
-        default_missing_value = "true",
-        num_args = 0..=1,
-        require_equals = true
+        value_delimiter = ',',
+        action = clap::ArgAction::Append
     )]
-    pub bind_fuse: Option<bool>,
+    pub bind: Option<Vec<String>>,
+
+    /// Disable default system bind mounts (e.g., /dev/fuse, D-Bus sockets, user directories)
+    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
+    pub no_default_binds: bool,
 
     /// Formats action output as a JSON blob. Does nothing for sandboxed commands.
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]

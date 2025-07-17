@@ -204,6 +204,7 @@
         "sighandler",
         "SIGSTOP",
         "SIGTSTP",
+        "splitn",
         "subsec",
         "syscall",
         "sysconfig",

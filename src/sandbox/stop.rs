@@ -64,6 +64,15 @@ impl Sandbox {
 
                     // Check if this process belongs to our sandbox namespace
                     let proc_ns_str = format!("/proc/{}/ns/pid", pid_str);
+
+                    #[cfg(feature = "coverage")]
+                    let proc_ns_str =
+                        if std::env::var_os("TEST_STOP_RACE3").is_some() {
+                            String::from("/proc/does-not-exist")
+                        } else {
+                            proc_ns_str
+                        };
+
                     let proc_ns_path = Path::new(&proc_ns_str);
                     if !proc_ns_path.exists() {
                         continue;

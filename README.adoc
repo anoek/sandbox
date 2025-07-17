@@ -160,10 +160,19 @@ Sets network access level. With no parameter this enables host networking. The
 default value is `none`, which disables network access. If you want to enable
 network access by default you can store net="host" in a config file.
 
-`--bind-fuse[=<BIND_FUSE>]`::
-Specify if you want to bind /dev/fuse within the sandbox. Disabling this will
-prevent appimages and FUSE-based filesystems from working, but may be considered
-more secure depending on your situation [possible values: true, false]
+`--bind[=<MOUNTS>]`::
+Specify directories or files to bind into the sandbox bypassing the sandbox
+OverlayFS system. 
+Examples: 
+  * `--bind=.` bind the current directory into the sandbox so that changes made
+    will be reflected in the host system without having to accept/reject them.
+    The rest of the system will still be mounted in OverlayFS FS layers to
+    protect your system. 
+  * `--bind=data1:/data` to mount the relative `data1` directory into the sandbox as `/data`.
+  * `--bind=my/protected/dir::ro` will mount the relative `my/protected/dir`
+    directory into the sandbox as read only.
+  * `SANDBOX_BIND="my/protected/dir::ro" sandbox` works as well.
+  * `SANDBOX_BIND="/dir1,/dir2" sandbox --bind=/dir3:/dir4:ro,/dir5` style combined mix and match bind mounting also works.
 
 `--json`::
 Formats action output as a JSON blob. Does nothing for sandboxed commands
@@ -217,11 +226,16 @@ These config files can set most of the CLI options:
   # "none" or "host"
   net="none"
 
-  # "true" or "false"
-  bind_fuse="true"
-
   # "trace", "debug", "info", "warn", or "error"
   log_level="info"
+  
+  # Bind mounts to apply to the sandbox
+  bind=[
+    "/dir1",
+    "/dir2::ro",
+    "/dir3:/dir4:ro",
+    "/dir5:/dir6",
+  ]
 ```
 
 ## Environment Variables
@@ -232,8 +246,9 @@ You can also set most of the options with environment variables if you wish:
   SANDBOX_NAME="my-sandbox"
   SANDBOX_STORAGE_DIR="/path/to/sandbox/storage"
   SANDBOX_NET="none"
-  SANDBOX_BIND_FUSE="true"
   SANDBOX_LOG_LEVEL="info"
+  SANDBOX_BIND="/my/dir"
+
 ```
 
 Environment variables override config files, and CLI arguments take the highest precedence.
