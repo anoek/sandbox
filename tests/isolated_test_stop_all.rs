@@ -10,6 +10,7 @@ use std::{io::Write, process::Command, thread::sleep, time::Duration};
  * tests that were running in parallel. */
 
 #[rstest]
+#[ignore = "Ignoring as this will stop non test sandboxes"]
 fn test_stop_all() -> Result<()> {
     let mut sandbox1 = sandbox();
     let mut sandbox2 = sandbox();

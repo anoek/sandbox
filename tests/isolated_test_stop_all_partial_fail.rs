@@ -10,6 +10,7 @@ use std::{process::Command, thread::sleep, time::Duration};
  * tests that were running in parallel. */
 
 #[rstest]
+#[ignore = "Problematic on dev machines with running sandboxes"]
 fn test_stop_all_partial_fail() -> Result<()> {
     let mut bad_sandbox = sandbox();
     bad_sandbox.run(&["true"])?;
