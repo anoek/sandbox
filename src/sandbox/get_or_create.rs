@@ -643,6 +643,15 @@ impl Sandbox {
             )?;
         }
 
+        // Mount /tmp
+        mount(
+            Some("tmpfs"),
+            "/tmp",
+            Some("tmpfs"),
+            MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
+            Some(format!("mode=1777,size={}", TMPFS_SIZE)),
+        )?;
+
         /* Mask out certain things from /proc and /sys to help isolate the sandbox.
          * These are based off of the things that docker masks out by default, see
          *
