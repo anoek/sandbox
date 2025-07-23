@@ -94,6 +94,24 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
 
+    // Handle mask paths from environment variable (additive)
+    if let Ok(mask_paths_env) = env::var("SANDBOX_MASK") {
+        let env_mask_paths: Vec<String> = mask_paths_env
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .map(|path| format!("{}:{}:mask", path, path))
+            .collect();
+
+        if !env_mask_paths.is_empty() {
+            match &mut partial_config.bind_mounts {
+                Some(existing) => existing.extend(env_mask_paths),
+                None => partial_config.bind_mounts = Some(env_mask_paths),
+            }
+            sources.insert("bind_mounts".into(), "environment".into());
+        }
+    }
+
     if let Ok(no_default_binds_env) = env::var("SANDBOX_NO_DEFAULT_BINDS") {
         let no_default_binds_val = bool::from_str(&no_default_binds_env)
             .expect("Invalid value for SANDBOX_NO_DEFAULT_BINDS");
@@ -157,6 +175,19 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         match &mut partial_config.bind_mounts {
             Some(existing) => existing.extend(cli_bind_mounts),
             None => partial_config.bind_mounts = Some(cli_bind_mounts),
+        }
+    }
+
+    // Handle mask entries from CLI - convert to bind mounts with mask option
+    if let Some(cli_mask_paths) = cli.mask {
+        let mask_bind_mounts: Vec<String> = cli_mask_paths
+            .into_iter()
+            .map(|path| format!("{}:{}:mask", path, path))
+            .collect();
+        
+        match &mut partial_config.bind_mounts {
+            Some(existing) => existing.extend(mask_bind_mounts),
+            None => partial_config.bind_mounts = Some(mask_bind_mounts),
         }
     }
 

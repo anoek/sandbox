@@ -62,6 +62,16 @@ pub struct Args {
     )]
     pub bind: Option<Vec<String>>,
 
+    /// Mask paths by mounting tmpfs (for directories) or /dev/null (for files). Can be specified multiple times.
+    /// Multiple paths can be specified by using --mask multiple times or as a comma-separated list.
+    #[arg(
+        long,
+        global = true,
+        value_delimiter = ',',
+        action = clap::ArgAction::Append
+    )]
+    pub mask: Option<Vec<String>>,
+
     /// Disable default system bind mounts (e.g., /dev/fuse, D-Bus sockets, user directories)
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub no_default_binds: bool,

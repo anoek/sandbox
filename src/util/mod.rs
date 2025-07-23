@@ -1,6 +1,7 @@
 mod access;
 mod clone3;
 mod drop_privileges;
+mod expand_tilde;
 mod find_mount_point;
 mod get_running_sandbox_pid;
 mod lock_sandbox;
@@ -14,6 +15,7 @@ mod sync_and_drop_caches;
 pub use access::*;
 pub use clone3::*;
 pub use drop_privileges::*;
+pub use expand_tilde::*;
 pub use find_mount_point::*;
 pub use get_running_sandbox_pid::*;
 pub use lock_sandbox::*;

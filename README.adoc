@@ -152,6 +152,14 @@ Set the log level to one of trace, debug, info, warn, or error. `-v` is shorthan
 Name of the sandbox, defaults to "sandbox". Executables run within the same sandbox
 name will be run in the same container.
 
+`--new`::
+Create a new sandbox with an auto-generated timestamp name. This is useful for
+creating ephemeral sandboxes for one-off tasks. Cannot be used with --name or --last.
+
+`--last`::
+Use the most recently created sandbox. This is useful for quickly returning to
+the last sandbox you were working in. Cannot be used with --name or --new.
+
 `--storage-dir=<STORAGE_DIR>`::
 Base storage directory for all sandboxes. Defaults to `~/.sandboxes/`
 
@@ -173,6 +181,20 @@ Examples:
     directory into the sandbox as read only.
   * `SANDBOX_BIND="my/protected/dir::ro" sandbox` works as well.
   * `SANDBOX_BIND="/dir1,/dir2" sandbox --bind=/dir3:/dir4:ro,/dir5` style combined mix and match bind mounting also works.
+
+`--mask[=<PATHS>]`::
+Mask paths by mounting tmpfs (for directories) or /dev/null (for files) to
+prevent access to sensitive data. This is useful for hiding configuration or
+credential directories from sandboxed processes.
+Examples:
+  * `--mask=~/.ssh` hides your SSH keys from the sandboxed process
+  * `--mask=/etc/passwd` masks the passwd file with /dev/null  
+  * `--mask=~/.aws,~/.config/gcloud` masks multiple paths
+  * `SANDBOX_MASK="~/.ssh,~/.aws" sandbox` works as well
+
+`--no-default-binds`::
+Disable default system bind mounts (e.g., /dev/fuse, D-Bus sockets, user directories).
+This is useful when you want complete control over what gets mounted into the sandbox.
 
 `--json`::
 Formats action output as a JSON blob. Does nothing for sandboxed commands
