@@ -1,5 +1,5 @@
 #![allow(clippy::option_map_unit_fn)]
-use crate::config::Config;
+use crate::config::{BindMountOptions, Config};
 use crate::outln;
 use crate::util::set_json_output;
 use anyhow::Result;
@@ -13,7 +13,8 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
             "name",
             "net",
             "log_level",
-            "bind_mounts",
+            "bind",
+            "mask",
             "no_default_binds",
             "storage_dir",
             "sandbox_dir",
@@ -30,9 +31,18 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
     let bind_mounts_str = config
         .bind_mounts
         .iter()
+        .filter(|m| m.options != BindMountOptions::Mask)
         .map(|m| m.argument.to_string())
         .collect::<Vec<_>>()
         .join(",");
+    let mask_str = config
+        .bind_mounts
+        .iter()
+        .filter(|m| m.options == BindMountOptions::Mask)
+        .map(|m| m.target.display().to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+
     let no_default_binds_str = format!("{}", config.no_default_binds);
     let ignored_str = format!("{}", config.ignored);
     for key in keys {
@@ -53,7 +63,8 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
                 config.overlay_cwd.to_str().unwrap_or("<error>"),
             ),
             "net" => ("net", net_str.as_str()),
-            "bind_mounts" => ("bind_mounts", bind_mounts_str.as_str()),
+            "bind" => ("bind", bind_mounts_str.as_str()),
+            "mask" => ("mask", mask_str.as_str()),
             "no_default_binds" => {
                 ("no_default_binds", no_default_binds_str.as_str())
             }

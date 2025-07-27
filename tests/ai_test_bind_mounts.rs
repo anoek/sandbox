@@ -20,7 +20,7 @@ fn test_bind_mount_cli(mut sandbox: SandboxManager) -> Result<()> {
     // Test single bind mount
     assert!(sandbox.pass(&["--bind", &test1, "config"]));
     // The output will include default bind mounts too, so just check that our bind mount is included
-    assert!(sandbox.last_stdout.contains("bind_mounts="));
+    assert!(sandbox.last_stdout.contains("bind="));
     assert!(sandbox.last_stdout.contains(&test1));
 
     // Test multiple bind mounts with separate flags
@@ -134,7 +134,7 @@ fn test_no_default_binds_env(mut sandbox: SandboxManager) -> Result<()> {
         "SANDBOX_NO_DEFAULT_BINDS",
         "true",
     )?;
-    assert!(sandbox.last_stdout.contains("bind_mounts=\n"));
+    assert!(sandbox.last_stdout.contains("bind=\n"));
 
     // Test that custom binds still work with the env variable
     sandbox.run_with_env(
@@ -168,7 +168,7 @@ fn test_bind_mount_env_parsing() -> Result<()> {
     )?;
 
     // Should have no bind mounts
-    assert!(sandbox.last_stdout.contains("bind_mounts=\n"));
+    assert!(sandbox.last_stdout.contains("bind=\n"));
 
     // Test env var with trailing comma
     let test_dir = sandbox.test_filename("bind_env_parsing");
@@ -206,7 +206,7 @@ fn test_bind_mount_env_parsing() -> Result<()> {
     )?;
 
     // Should have no bind mounts
-    assert!(sandbox.last_stdout.contains("bind_mounts=\n"));
+    assert!(sandbox.last_stdout.contains("bind=\n"));
 
     Ok(())
 }
@@ -537,11 +537,11 @@ bind = []
     let bind_mounts_line = sandbox
         .last_stdout
         .lines()
-        .find(|line| line.starts_with("bind_mounts="))
+        .find(|line| line.starts_with("bind="))
         .expect("bind_mounts line should exist");
 
     // Should have some default binds (not empty)
-    assert!(!bind_mounts_line.contains("bind_mounts=[]"));
+    assert!(!bind_mounts_line.contains("bind=\n"));
 
     Ok(())
 }

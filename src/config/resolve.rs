@@ -31,8 +31,14 @@ fn parse_bind_mount(bind_mount: &str) -> Result<BindMount> {
         source.clone()
     };
 
-    let source = source.canonicalize()?;
-    let target = target.canonicalize()?;
+    let source = source.canonicalize().context(format!(
+        "Failed to canonicalize source path: {}",
+        source.display()
+    ))?;
+    let target = target.canonicalize().context(format!(
+        "Failed to canonicalize target path: {}",
+        target.display()
+    ))?;
 
     let options = if parts.len() >= 3 {
         BindMountOptions::from_str(parts[2])?
@@ -118,9 +124,9 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
             .collect();
 
         if !env_bind_mounts.is_empty() {
-            match &mut partial_config.bind_mounts {
+            match &mut partial_config.bind {
                 Some(existing) => existing.extend(env_bind_mounts),
-                None => partial_config.bind_mounts = Some(env_bind_mounts),
+                None => partial_config.bind = Some(env_bind_mounts),
             }
             sources.insert("bind_mounts".into(), "environment".into());
         }
@@ -136,9 +142,9 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
             .collect();
 
         if !env_mask_paths.is_empty() {
-            match &mut partial_config.bind_mounts {
+            match &mut partial_config.bind {
                 Some(existing) => existing.extend(env_mask_paths),
-                None => partial_config.bind_mounts = Some(env_mask_paths),
+                None => partial_config.bind = Some(env_mask_paths),
             }
             sources.insert("bind_mounts".into(), "environment".into());
         }
@@ -204,9 +210,9 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
 
     // Handle bind mounts from CLI (additive)
     if let Some(cli_bind_mounts) = cli.bind {
-        match &mut partial_config.bind_mounts {
+        match &mut partial_config.bind {
             Some(existing) => existing.extend(cli_bind_mounts),
-            None => partial_config.bind_mounts = Some(cli_bind_mounts),
+            None => partial_config.bind = Some(cli_bind_mounts),
         }
     }
 
@@ -217,9 +223,9 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
             .map(|path| format!("{}:{}:mask", path, path))
             .collect();
 
-        match &mut partial_config.bind_mounts {
+        match &mut partial_config.bind {
             Some(existing) => existing.extend(mask_bind_mounts),
-            None => partial_config.bind_mounts = Some(mask_bind_mounts),
+            None => partial_config.bind = Some(mask_bind_mounts),
         }
     }
 
@@ -285,8 +291,14 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         all_bind_mounts.extend(default_binds);
     }
 
-    if let Some(bind_mounts) = partial_config.bind_mounts {
+    if let Some(bind_mounts) = partial_config.bind {
         all_bind_mounts.extend(bind_mounts);
+    }
+
+    if let Some(masks) = partial_config.mask {
+        for mask in masks {
+            all_bind_mounts.push(format!("{}::mask", mask));
+        }
     }
 
     // Parse all bind mounts and check for conflicts
@@ -626,11 +638,19 @@ fn merge_configs(
         sources.insert("no_default_binds".into(), source.into());
     }
     // Handle bind_mounts additively
-    if let Some(bind_mounts) = override_config.bind_mounts {
-        match &mut base.bind_mounts {
+    if let Some(bind_mounts) = override_config.bind {
+        match &mut base.bind {
             Some(existing) => existing.extend(bind_mounts),
-            None => base.bind_mounts = Some(bind_mounts),
+            None => base.bind = Some(bind_mounts),
         }
+        sources.insert("bind".into(), source.into());
+    }
+    if let Some(mask) = override_config.mask {
+        match &mut base.mask {
+            Some(existing) => existing.extend(mask),
+            None => base.mask = Some(mask),
+        }
+        sources.insert("mask".into(), source.into());
     }
 }
 
@@ -880,7 +900,7 @@ mod tests {
         let mut base = PartialConfig::default();
         let mut sources = HashMap::new();
         let mut base_with_binds = PartialConfig {
-            bind_mounts: Some(vec!["/tmp/test1".to_string()]),
+            bind: Some(vec!["/tmp/test1".to_string()]),
             ..PartialConfig::default()
         };
 
@@ -890,10 +910,11 @@ mod tests {
             storage_dir: Some("/tmp/test".to_string()),
             net: Some(Network::Host),
             ignored: Some(true),
-            bind_mounts: Some(vec![
+            bind: Some(vec![
                 "/tmp/test1".to_string(),
                 "/tmp/test2".to_string(),
             ]),
+            mask: Some(vec!["/tmp/test3".to_string()]),
             no_default_binds: Some(true),
         };
 
@@ -917,11 +938,11 @@ mod tests {
         assert!(matches!(base.net, Some(Network::Host)));
         assert_eq!(base.ignored, Some(true));
         assert_eq!(
-            base.bind_mounts,
+            base.bind,
             Some(vec!["/tmp/test1".to_string(), "/tmp/test2".to_string()])
         );
         assert_eq!(
-            base_with_binds.bind_mounts,
+            base_with_binds.bind,
             Some(vec![
                 "/tmp/test1".to_string(),
                 "/tmp/test1".to_string(),

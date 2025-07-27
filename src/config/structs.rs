@@ -56,8 +56,8 @@ pub struct PartialConfig {
     pub storage_dir: Option<String>,
     pub net: Option<Network>,
     pub ignored: Option<bool>,
-    #[serde(rename = "bind", default)]
-    pub bind_mounts: Option<Vec<String>>,
+    pub bind: Option<Vec<String>>,
+    pub mask: Option<Vec<String>>,
     pub no_default_binds: Option<bool>,
 }
 
