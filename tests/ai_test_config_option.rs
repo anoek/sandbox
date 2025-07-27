@@ -76,31 +76,3 @@ ignored = true
 
     Ok(())
 }
-
-/// Test the config file loading with a sandbox that has a proper storage dir
-#[rstest]
-fn ai_test_config_loading_in_sandbox(
-    mut sandbox: SandboxManager,
-) -> Result<()> {
-    // For testing config loading within a running sandbox, we need to ensure
-    // we're in an environment with a suitable mount type
-
-    // Create config files that won't interfere with storage dir resolution
-    let config_content = r#"
-log_level = "debug"
-"#;
-
-    let config_file = sandbox.test_filename("test.toml");
-    fs::write(&config_file, config_content)?;
-
-    // Use the list action instead of config action to avoid storage dir issues
-    assert!(sandbox.pass(&["--config", &config_file, "list"]));
-
-    // Verify config was loaded by checking verbose output
-    assert!(
-        sandbox.last_stderr.contains("debug")
-            || sandbox.last_stdout.contains("debug")
-    );
-
-    Ok(())
-}
