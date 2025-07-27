@@ -21,6 +21,7 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
             "upper_cwd",
             "overlay_cwd",
             "ignored",
+            "config_files",
         ]
         .map(String::from)
         .to_vec()
@@ -45,6 +46,12 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
 
     let no_default_binds_str = format!("{}", config.no_default_binds);
     let ignored_str = format!("{}", config.ignored);
+    let config_files_str = config
+        .config_files
+        .iter()
+        .map(|p| p.display().to_string())
+        .collect::<Vec<_>>()
+        .join(",");
     for key in keys {
         let (key, value) = match key.as_str() {
             "storage_dir" | "storage-dir" => (
@@ -71,6 +78,7 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
             "name" => ("name", config.name.as_str()),
             "log_level" => ("log_level", config.log_level.as_str()),
             "ignored" => ("ignored", ignored_str.as_str()),
+            "config_files" => ("config_files", config_files_str.as_str()),
             _ => {
                 return Err(anyhow::anyhow!("Unknown key: {}", key));
             }
@@ -103,6 +111,17 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
                     );
                     Value::Object(map)
                 })
+                .collect(),
+        ),
+    );
+
+    set_json_output(
+        "config_files_list",
+        &Value::Array(
+            config
+                .config_files
+                .iter()
+                .map(|p| Value::String(p.display().to_string()))
                 .collect(),
         ),
     );

@@ -84,6 +84,16 @@ pub struct Args {
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub no_config: bool,
 
+    /// Config files to load (can be specified multiple times). If empty, no config files are loaded.
+    #[arg(
+        long,
+        global = true,
+        value_delimiter = ',',
+        action = clap::ArgAction::Append,
+        conflicts_with = "no_config"
+    )]
+    pub config: Option<Vec<String>>,
+
     /// Include files that would normally be filtered out by ignore rules.
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub ignored: bool,

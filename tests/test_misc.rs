@@ -222,3 +222,10 @@ fn test_no_xdg() -> Result<()> {
     assert!(sandbox.epass(&["true"], "TEST_EMPTY_XDG_RUNTIME_DIR", "1"));
     Ok(())
 }
+
+#[rstest]
+fn test_empty_config(mut sandbox: SandboxManager) -> Result<()> {
+    let output = sandbox.run(&["--config=", "config", "config_files"])?;
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "\n");
+    Ok(())
+}

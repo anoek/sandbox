@@ -56,7 +56,8 @@ fn parse_bind_mount(bind_mount: &str) -> Result<BindMount> {
 
 pub fn resolve_config(cli: Args) -> Result<Config> {
     let uid_gid_home = resolve_uid_gid_home()?;
-    let (mut partial_config, mut sources) = load_partial(cli.no_config)?;
+    let (mut partial_config, mut sources, config_files) =
+        load_partial(cli.no_config, cli.config.clone())?;
 
     // Check for mutually exclusive name options
     if (cli.new || cli.last)
@@ -345,6 +346,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources,
         bind_mounts,
         no_default_binds,
+        config_files,
     };
 
     validate_config(&config)?;
@@ -529,16 +531,45 @@ pub fn resolve_sandbox_storage_dir(
 
 pub fn load_partial(
     no_config: bool,
-) -> Result<(PartialConfig, HashMap<String, String>)> {
-    let config_paths = if no_config {
-        vec![]
+    config_files: Option<Vec<String>>,
+) -> Result<(PartialConfig, HashMap<String, String>, Vec<PathBuf>)> {
+    let (config_paths, config_source) = if no_config {
+        (vec![], "no-config")
+    } else if let Some(files) = config_files {
+        // If --config is specified with files, use them
+        let files = files
+            .into_iter()
+            .filter(|f| !f.is_empty())
+            .collect::<Vec<_>>();
+        if files.is_empty() {
+            // If --config is specified but empty, don't load any config files
+            (vec![], "cli --config (empty)")
+        } else {
+            // Convert strings to PathBuf and expand tildes
+            let mut paths = Vec::new();
+            for file in files {
+                let path = expand_tilde_path(Path::new(&file))?;
+                if !path.exists() {
+                    return Err(anyhow::anyhow!(
+                        "Config file not found: {}",
+                        path.display()
+                    ));
+                }
+                paths.push(path);
+            }
+            (paths, "cli --config")
+        }
     } else {
-        find_config_files()?
+        // Default behavior: search for config files
+        (find_config_files()?, "default search")
     };
     let mut sources = HashMap::new();
+    if !config_paths.is_empty() {
+        sources.insert("config_files".to_string(), config_source.to_string());
+    }
     if config_paths.is_empty() {
         trace!("No config files found, using default config");
-        return Ok((PartialConfig::default(), sources));
+        return Ok((PartialConfig::default(), sources, vec![]));
     }
 
     let mut merged_config = PartialConfig::default();
@@ -562,7 +593,7 @@ pub fn load_partial(
         trace!("Loaded config file: {}", path.display());
     }
 
-    Ok((merged_config, sources))
+    Ok((merged_config, sources, config_paths))
 }
 
 /** Returns a vec of all config files found */
@@ -839,6 +870,7 @@ mod tests {
             log_level: LevelFilter::Info,
             bind_mounts: vec![],
             no_default_binds: false,
+            config_files: vec![],
         };
         assert!(validate_config(&config).is_ok());
         config.name = "../test-sandbox".to_string();

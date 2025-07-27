@@ -74,4 +74,5 @@ pub struct Config {
     pub ignored: bool,
     pub bind_mounts: Vec<BindMount>,
     pub no_default_binds: bool,
+    pub config_files: Vec<PathBuf>,
 }

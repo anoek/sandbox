@@ -35,6 +35,10 @@ fn test_cli(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.last_stdout.contains("name=sandbox"));
     assert!(sandbox.last_stdout.contains("net=none"));
 
+    // Test config_files display
+    assert!(sandbox.pass(&["--no-config", "config", "config_files"]));
+    assert!(sandbox.last_stdout == "\n"); // Should be empty with --no-config
+
     Ok(())
 }
 

@@ -49,6 +49,42 @@ fn test_mask_mask_cli_no_config(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
+fn test_mask_config(mut sandbox: SandboxManager) -> Result<()> {
+    let config_file1 = sandbox.test_filename("config.toml");
+    let config_file2 = sandbox.test_filename("config2.toml");
+    std::fs::write(&config_file1, "mask = [\"/tmp\"]")?;
+    std::fs::write(&config_file2, "mask = [\"/run\"]")?;
+
+    sandbox.run(&[
+        "--config",
+        &config_file1,
+        "--config",
+        &config_file2,
+        "config",
+        "config_files",
+    ])?;
+    println!("{}", sandbox.last_stdout);
+    println!("{}", sandbox.last_stderr);
+    assert!(sandbox.last_stdout.contains(&config_file1));
+    assert!(sandbox.last_stdout.contains(&config_file2));
+
+    sandbox.run(&[
+        "--config",
+        &config_file1,
+        "--config",
+        &config_file2,
+        "config",
+        "mask",
+    ])?;
+    println!("{}", sandbox.last_stdout);
+    println!("{}", sandbox.last_stderr);
+    assert!(sandbox.last_stdout.contains("/tmp"));
+    assert!(sandbox.last_stdout.contains("/run"));
+
+    Ok(())
+}
+
+#[rstest]
 fn test_mask_env(mut sandbox: SandboxManager) -> Result<()> {
     let test_dir = sandbox.test_filename("mask_from_env");
     std::fs::create_dir(&test_dir)?;

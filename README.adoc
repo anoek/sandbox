@@ -202,6 +202,9 @@ Formats action output as a JSON blob. Does nothing for sandboxed commands
 `--no-config`::
 Do not load config files. Environment variables will still be used.
 
+`--config[=<PATHS>]`::
+Load config files from the given path. Can be specified multiple times.
+
 `--ignored`::
 Show files that would normally be filtered out by ignore rules.
 
@@ -257,6 +260,11 @@ These config files can set most of the CLI options:
     "/dir2::ro",
     "/dir3:/dir4:ro",
     "/dir5:/dir6",
+  ]
+
+  # Mask paths so they exist but are empty 
+  mask=[
+    "~/.ssh",
   ]
 ```
 
