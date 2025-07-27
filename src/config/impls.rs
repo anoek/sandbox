@@ -40,3 +40,30 @@ where
             .map_err(serde::de::Error::custom)
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::structs::BindMountOptions;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_bind_mount_options_from_str() {
+        assert!(matches!(
+            BindMountOptions::from_str("").unwrap(),
+            BindMountOptions::ReadWrite
+        ));
+        assert!(matches!(
+            BindMountOptions::from_str("rw").unwrap(),
+            BindMountOptions::ReadWrite
+        ));
+        assert!(matches!(
+            BindMountOptions::from_str("ro").unwrap(),
+            BindMountOptions::ReadOnly
+        ));
+        assert!(matches!(
+            BindMountOptions::from_str("mask").unwrap(),
+            BindMountOptions::Mask
+        ));
+        assert!(BindMountOptions::from_str("invalid").is_err());
+    }
+}

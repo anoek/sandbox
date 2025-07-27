@@ -178,6 +178,8 @@ impl SandboxManager {
             cmd.args(["--ignored"]);
         }
 
+        cmd.args(["--no-config"]);
+
         if !self.no_default_options
             && !args.iter().any(|arg| arg.starts_with("--name"))
         {

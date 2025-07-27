@@ -1,6 +1,5 @@
 use super::mount_overlays::MountHash;
-use crate::config::Config;
-use crate::config::Network;
+use crate::config::{BindMountOptions, Config, Network};
 use crate::sandbox::Sandbox;
 #[cfg(feature = "coverage")]
 use crate::util::CLONE_FS;
@@ -397,39 +396,39 @@ impl Sandbox {
 
         /* Handle bind mounts from config - stage them temporarily */
         for (idx, bind_mount) in config.bind_mounts.iter().enumerate() {
-            trace!("Processing bind mount {}", bind_mount);
-            let mut parts: Vec<&str> = bind_mount.splitn(3, ':').collect();
+            trace!("Processing bind mount {:?}", bind_mount);
 
-            if parts.len() < 2 {
-                parts.push(parts[0]);
-            }
-            parts[1] = if parts[1].is_empty() {
-                parts[0]
-            } else {
-                parts[1]
+            let (is_readonly, is_mask) = match &bind_mount.options {
+                BindMountOptions::ReadOnly => (true, false),
+                BindMountOptions::Mask => (false, true),
+                BindMountOptions::ReadWrite => (false, false),
             };
-            if parts.len() < 3 {
-                parts.push("rw");
-            }
 
-            let (source_path, target_path, is_readonly) = (
-                Path::new(parts[0]),
-                Path::new(parts[1]),
-                parts[2] == "ro" || parts[2] == "readonly",
-            );
+            let (source, canonicalized_target, is_dir) = if is_mask {
+                // For mask, we don't need to canonicalize the target path since it may not exist
+                let is_dir =
+                    bind_mount.target.is_dir() || !bind_mount.target.exists();
+                (
+                    PathBuf::from("/dev/null"),
+                    bind_mount.target.clone(),
+                    is_dir,
+                )
+            } else {
+                // Normal bind mount - resolve source to absolute path
+                let source =
+                    bind_mount.source.canonicalize().context(format!(
+                        "failed to canonicalize source path: {}",
+                        bind_mount.source.display()
+                    ))?;
+                let canonicalized_target =
+                    bind_mount.target.canonicalize().context(format!(
+                        "failed to canonicalize target path: {}",
+                        bind_mount.target.display()
+                    ))?;
 
-            // Resolve source to absolute path
-            let source = source_path.canonicalize().context(format!(
-                "failed to canonicalize source path: {}",
-                source_path.display()
-            ))?;
-            let canonicalized_target =
-                target_path.canonicalize().context(format!(
-                    "failed to canonicalize target path: {}",
-                    target_path.display()
-                ))?;
-
-            let is_dir = source.is_dir();
+                let is_dir = source.is_dir();
+                (source, canonicalized_target, is_dir)
+            };
 
             // Create staging path
             let staging_name = format!("mount-{}", idx);
@@ -448,21 +447,51 @@ impl Sandbox {
 
             // Special case: /run/systemd is always read-only for security
             let is_readonly =
-                is_readonly || source_path == Path::new("/run/systemd");
+                is_readonly || bind_mount.source == Path::new("/run/systemd");
 
-            // First perform the bind mount without read-only flag
-            mount(
-                Some(&source),
-                &staging_path_host,
-                Some("bind"),
-                MsFlags::MS_BIND,
-                null,
-            )
-            .context(format!(
-                "Failed to bind mount {} to staging path {}",
-                source.display(),
-                staging_path_host.display()
-            ))?;
+            if is_mask {
+                if is_dir {
+                    // For masked directories, mount tmpfs
+                    mount(
+                        Some("mask"),
+                        &staging_path_host,
+                        Some("tmpfs"),
+                        MsFlags::MS_NOSUID | MsFlags::MS_NODEV,
+                        Some(format!("mode=0755,size={}", TMPFS_SIZE)),
+                    )
+                    .context(format!(
+                        "Failed to mask directory {} with tmpfs",
+                        staging_path_host.display()
+                    ))?;
+                } else {
+                    // For masked files, bind mount /dev/null
+                    mount(
+                        Some("/dev/null"),
+                        &staging_path_host,
+                        Some("bind"),
+                        MsFlags::MS_BIND,
+                        null,
+                    )
+                    .context(format!(
+                        "Failed to mask file {} with /dev/null",
+                        staging_path_host.display()
+                    ))?;
+                }
+            } else {
+                // Normal bind mount
+                mount(
+                    Some(&source),
+                    &staging_path_host,
+                    Some("bind"),
+                    MsFlags::MS_BIND,
+                    null,
+                )
+                .context(format!(
+                    "Failed to bind mount {} to staging path {}",
+                    source.display(),
+                    staging_path_host.display()
+                ))?;
+            }
 
             // For read-only mounts, immediately remount with read-only flag
             if is_readonly {
@@ -479,11 +508,19 @@ impl Sandbox {
                 )?;
             }
 
-            trace!(
-                "Bind mounted {} to staging path {}",
-                source.display(),
-                staging_path_host.display()
-            );
+            if is_mask {
+                trace!(
+                    "Masked {} to mounted to staging path {}",
+                    canonicalized_target.display(),
+                    staging_path_host.display()
+                );
+            } else {
+                trace!(
+                    "Bind mounted {} to staging path {}",
+                    source.display(),
+                    staging_path_host.display()
+                );
+            }
 
             // Store info for later relocation
             bind_mount_infos.push(BindMountInfo {

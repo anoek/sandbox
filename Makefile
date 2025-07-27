@@ -58,6 +58,12 @@ ready-for-commit-tests:
 	fi
 
 
+clean-bad-mounts:
+	sandbox stop --all
+	mount | grep 'overlay on ' | grep 'sandbox' | awk '{print $$3}' | xargs -I{} sudo umount {}
+
+
+
 clean:
 	sudo chown -R $(USER) .
 	cargo clean
@@ -85,11 +91,14 @@ update-coverage-report-and-show-json:
 	cat coverage/html/coverage.json | jq
 
 # We usually ignore the tests that conflict with external sandboxes, namely `stop --all`. However 
-full-test: build-coverage-binary
+test-with-stop-all: build-coverage-binary
 	@echo "### Running all tests including --ignored tests"
+	sudo rm --one-file-system -Rf coverage
+	mkdir -p coverage/profraw
+	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage -- --test-threads=1
 	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage -- --test-threads=1 --ignored
 
-full-coverage: full-test update-coverage-report-and-show-json
+coverage-with-stop-all: test-with-stop-all update-coverage-report-and-show-json
 
 # NOTE: The full tests do their own coverage report generation in the vm-testing/80-generate-coverage-reports.sh script
 update-coverage-report:	
