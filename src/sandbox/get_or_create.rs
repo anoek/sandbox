@@ -1,6 +1,5 @@
 use super::mount_overlays::MountHash;
-use crate::config::Config;
-use crate::config::Network;
+use crate::config::{BindMountOptions, Config, Network};
 use crate::sandbox::Sandbox;
 #[cfg(feature = "coverage")]
 use crate::util::CLONE_FS;
@@ -10,7 +9,7 @@ use crate::util::get_sandbox_pid_path;
 use crate::util::{
     CLONE_NEWCGROUP, CLONE_NEWIPC, CLONE_NEWNET, CLONE_NEWNS, CLONE_NEWPID,
     CLONE_NEWUTS, Clone3Args, check_path_for_mount_option_compatibility,
-    clone3, expand_tilde_path, mkdir, mount,
+    clone3, mkdir, mount,
 };
 use anyhow::Context;
 use anyhow::{Result, anyhow};
@@ -397,47 +396,34 @@ impl Sandbox {
 
         /* Handle bind mounts from config - stage them temporarily */
         for (idx, bind_mount) in config.bind_mounts.iter().enumerate() {
-            trace!("Processing bind mount {}", bind_mount);
-            let mut parts: Vec<&str> = bind_mount.splitn(3, ':').collect();
+            trace!("Processing bind mount {:?}", bind_mount);
 
-            if parts.len() < 2 {
-                parts.push(parts[0]);
-            }
-            parts[1] = if parts[1].is_empty() {
-                parts[0]
-            } else {
-                parts[1]
+            let (is_readonly, is_mask) = match &bind_mount.options {
+                BindMountOptions::ReadOnly => (true, false),
+                BindMountOptions::Mask => (false, true),
+                BindMountOptions::ReadWrite => (false, false),
             };
-            if parts.len() < 3 {
-                parts.push("rw");
-            }
-
-            let source_path = expand_tilde_path(Path::new(parts[0]))?;
-            let target_path = expand_tilde_path(Path::new(parts[1]))?;
-
-            let (source_path, target_path, is_readonly, is_mask) = (
-                source_path.as_path(),
-                target_path.as_path(),
-                parts[2] == "ro" || parts[2] == "readonly",
-                parts[2] == "mask",
-            );
 
             let (source, canonicalized_target, is_dir) = if is_mask {
-                let target_canon = target_path
-                    .canonicalize()
-                    .unwrap_or_else(|_| target_path.to_path_buf());
-                let is_dir = target_canon.is_dir() || !target_canon.exists();
-                (PathBuf::from("/dev/null"), target_canon, is_dir)
+                // For mask, we don't need to canonicalize the target path since it may not exist
+                let is_dir =
+                    bind_mount.target.is_dir() || !bind_mount.target.exists();
+                (
+                    PathBuf::from("/dev/null"),
+                    bind_mount.target.clone(),
+                    is_dir,
+                )
             } else {
                 // Normal bind mount - resolve source to absolute path
-                let source = source_path.canonicalize().context(format!(
-                    "failed to canonicalize source path: {}",
-                    source_path.display()
-                ))?;
+                let source =
+                    bind_mount.source.canonicalize().context(format!(
+                        "failed to canonicalize source path: {}",
+                        bind_mount.source.display()
+                    ))?;
                 let canonicalized_target =
-                    target_path.canonicalize().context(format!(
+                    bind_mount.target.canonicalize().context(format!(
                         "failed to canonicalize target path: {}",
-                        target_path.display()
+                        bind_mount.target.display()
                     ))?;
 
                 let is_dir = source.is_dir();
@@ -461,7 +447,7 @@ impl Sandbox {
 
             // Special case: /run/systemd is always read-only for security
             let is_readonly =
-                is_readonly || source_path == Path::new("/run/systemd");
+                is_readonly || bind_mount.source == Path::new("/run/systemd");
 
             if is_mask {
                 if is_dir {

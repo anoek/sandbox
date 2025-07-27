@@ -58,6 +58,12 @@ ready-for-commit-tests:
 	fi
 
 
+clean-bad-mounts:
+	sandbox stop --all
+	mount | grep 'overlay on ' | grep 'sandbox' | awk '{print $$3}' | xargs -I{} sudo umount {}
+
+
+
 clean:
 	sudo chown -R $(USER) .
 	cargo clean

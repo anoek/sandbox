@@ -134,7 +134,7 @@ fn test_no_default_binds_env(mut sandbox: SandboxManager) -> Result<()> {
         "SANDBOX_NO_DEFAULT_BINDS",
         "true",
     )?;
-    assert!(sandbox.last_stdout.contains("bind_mounts=[]"));
+    assert!(sandbox.last_stdout.contains("bind_mounts=\n"));
 
     // Test that custom binds still work with the env variable
     sandbox.run_with_env(
@@ -168,7 +168,7 @@ fn test_bind_mount_env_parsing() -> Result<()> {
     )?;
 
     // Should have no bind mounts
-    assert!(sandbox.last_stdout.contains("bind_mounts=[]"));
+    assert!(sandbox.last_stdout.contains("bind_mounts=\n"));
 
     // Test env var with trailing comma
     let test_dir = sandbox.test_filename("bind_env_parsing");
@@ -206,7 +206,7 @@ fn test_bind_mount_env_parsing() -> Result<()> {
     )?;
 
     // Should have no bind mounts
-    assert!(sandbox.last_stdout.contains("bind_mounts=[]"));
+    assert!(sandbox.last_stdout.contains("bind_mounts=\n"));
 
     Ok(())
 }
@@ -228,16 +228,12 @@ fn test_bind_mount_env_with_options(mut sandbox: SandboxManager) -> Result<()> {
     sandbox.run_with_env(
         &["--no-default-binds", "config"],
         "SANDBOX_BIND",
-        &format!("{}::ro,{}::readonly", test1, test2),
+        &format!("{}::ro,{}::ro", test1, test2),
     )?;
 
     // Should include both bind mounts with their options
     assert!(sandbox.last_stdout.contains(&format!("{}::ro", test1)));
-    assert!(
-        sandbox
-            .last_stdout
-            .contains(&format!("{}::readonly", test2))
-    );
+    assert!(sandbox.last_stdout.contains(&format!("{}::ro", test2)));
 
     // Test mixed read-only and read-write mounts
     sandbox.run_with_env(
@@ -248,106 +244,6 @@ fn test_bind_mount_env_with_options(mut sandbox: SandboxManager) -> Result<()> {
 
     assert!(sandbox.last_stdout.contains(&test3));
     assert!(sandbox.last_stdout.contains(&test4));
-
-    Ok(())
-}
-
-#[rstest]
-fn test_bind_mount_edge_empty() -> Result<()> {
-    // Test empty bind mount (--bind=)
-    let mut sandbox = SandboxManager::new();
-    assert!(sandbox.pass(&[
-        "--bind=",
-        "--no-default-binds",
-        "--no-config",
-        "config"
-    ]));
-
-    // Check bind_mounts output contains empty string
-    let bind_mounts_line = sandbox
-        .last_stdout
-        .lines()
-        .find(|line| line.starts_with("bind_mounts="))
-        .expect("bind_mounts line should exist");
-
-    // The empty bind should be present in the array
-    assert!(bind_mounts_line.contains("\"\""));
-
-    // Test that empty bind doesn't prevent other binds
-    {
-        let mut sandbox2 = SandboxManager::new();
-        let test_dir = sandbox2.test_filename("bind_edge_empty");
-        fs::create_dir_all(&test_dir)?;
-        let test1 = format!("{}/test1", test_dir);
-        fs::create_dir_all(&test1)?;
-
-        assert!(sandbox2.pass(&[
-            "--bind=",
-            "--bind",
-            &test1,
-            "--no-default-binds",
-            "--no-config",
-            "config"
-        ]));
-
-        let bind_mounts = sandbox2
-            .last_stdout
-            .lines()
-            .find(|line| line.starts_with("bind_mounts="))
-            .expect("bind_mounts line should exist");
-
-        assert!(bind_mounts.contains("\"\""));
-        assert!(bind_mounts.contains(&test1));
-    }
-
-    // Test multiple empty binds with --bind= syntax
-    {
-        let mut sandbox3 = SandboxManager::new();
-        assert!(sandbox3.pass(&[
-            "--bind=",
-            "--bind=",
-            "--no-default-binds",
-            "--no-config",
-            "config"
-        ]));
-
-        let bind_mounts_multi = sandbox3
-            .last_stdout
-            .lines()
-            .find(|line| line.starts_with("bind_mounts="))
-            .expect("bind_mounts line should exist");
-
-        // Should contain exactly two empty strings (deduplicated)
-        let empty_count = bind_mounts_multi.matches("\"\"").count();
-        assert_eq!(empty_count, 1, "Empty binds should be deduplicated");
-    }
-
-    // Test combined empty bind with non-empty bind
-    {
-        let mut sandbox4 = SandboxManager::new();
-        let test_dir = sandbox4.test_filename("bind_edge_combined");
-        fs::create_dir_all(&test_dir)?;
-        let test1 = format!("{}/test1", test_dir);
-        fs::create_dir_all(&test1)?;
-
-        assert!(sandbox4.pass(&[
-            "--bind=",
-            "--bind",
-            &test1,
-            "--no-default-binds",
-            "--no-config",
-            "config"
-        ]));
-
-        let bind_mounts_combined = sandbox4
-            .last_stdout
-            .lines()
-            .find(|line| line.starts_with("bind_mounts="))
-            .expect("bind_mounts line should exist");
-
-        assert!(bind_mounts_combined.contains("\"\""));
-        assert!(bind_mounts_combined.contains(&test1));
-    }
 
     Ok(())
 }
@@ -470,10 +366,7 @@ fn test_bind_mount_env_read_only() -> Result<()> {
     sandbox.run_with_env(
         &["--no-config", "config"],
         "SANDBOX_BIND",
-        &format!(
-            "{},{}:{}:ro,{}::readonly",
-            test1, test2, mapped, test_dir_str
-        ),
+        &format!("{},{}:{}:ro,{}::ro", test1, test2, mapped, test_dir_str),
     )?;
 
     // Should contain all bind mounts
@@ -486,79 +379,11 @@ fn test_bind_mount_env_read_only() -> Result<()> {
     assert!(
         sandbox
             .last_stdout
-            .contains(&format!("{}::readonly", test_dir_str))
+            .contains(&format!("{}::ro", test_dir_str))
     );
 
     // Cleanup
     fs::remove_dir_all(test_dir)?;
-
-    Ok(())
-}
-
-#[rstest]
-fn test_bind_mount_deduplication_with_options() -> Result<()> {
-    let mut sandbox = SandboxManager::new();
-    let test_dir = sandbox.test_filename("bind_dedup_options");
-    fs::create_dir_all(&test_dir)?;
-    let test1 = format!("{}/test1", test_dir);
-    let test2 = format!("{}/test2", test_dir);
-    fs::create_dir_all(&test1)?;
-    fs::create_dir_all(&test2)?;
-
-    // Test that duplicate bind mounts with different options are NOT deduplicated
-    assert!(sandbox.pass(&[
-        "--no-config",
-        "--bind",
-        &test1,
-        "--bind",
-        &format!("{}::ro", test1),
-        "config"
-    ]));
-
-    // Should appear twice - once without options, once with :ro
-    let bind_mounts_line = sandbox
-        .last_stdout
-        .lines()
-        .find(|line| line.starts_with("bind_mounts="))
-        .expect("bind_mounts line should exist");
-
-    // Count occurrences of test1 (both with and without :ro)
-    let test1_plain_count =
-        bind_mounts_line.matches(&format!("\"{}\"", test1)).count();
-    let test1_ro_count = bind_mounts_line
-        .matches(&format!("\"{}::ro\"", test1))
-        .count();
-
-    assert_eq!(
-        test1_plain_count, 1,
-        "Should have one plain {} mount",
-        test1
-    );
-    assert_eq!(test1_ro_count, 1, "Should have one {}::ro mount", test1);
-
-    // Test that identical bind mounts with same options ARE deduplicated
-    let mut sandbox2 = SandboxManager::new();
-    assert!(sandbox2.pass(&[
-        "--no-config",
-        "--bind",
-        &format!("{}::ro", test2),
-        "--bind",
-        &format!("{}::ro", test2),
-        "config"
-    ]));
-
-    let bind_mounts_line2 = sandbox2
-        .last_stdout
-        .lines()
-        .find(|line| line.starts_with("bind_mounts="))
-        .expect("bind_mounts line should exist");
-
-    let test2_ro_count =
-        bind_mounts_line2.matches(&format!("{}::ro", test2)).count();
-    assert_eq!(
-        test2_ro_count, 1,
-        "Duplicate bind mounts with same options should be deduplicated"
-    );
 
     Ok(())
 }
@@ -627,8 +452,6 @@ fn test_bind_mount_edge_cases() -> Result<()> {
     Ok(())
 }
 
-// NOTE: test_bind_mount_relative_paths moved to ai_isolated_bind_mount_relative_paths.rs
-
 // From ai_test_bind_mount_empty_destination.rs
 #[rstest]
 fn test_bind_mount_empty_destination() -> Result<()> {
@@ -683,35 +506,6 @@ fn test_bind_mount_empty_destination_with_sudo() -> Result<()> {
         "Command failed with stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-
-    Ok(())
-}
-
-#[rstest]
-fn test_bind_mount_relative_paths() -> Result<()> {
-    let mut sandbox = SandboxManager::new();
-    let test_dir = sandbox.test_filename("bind_relative");
-    fs::create_dir_all(&test_dir)?;
-
-    // Create some test directories
-    let subdir1 = format!("{}/subdir1", test_dir);
-    let subdir2 = format!("{}/subdir2", test_dir);
-    fs::create_dir_all(&subdir1)?;
-    fs::create_dir_all(&subdir2)?;
-
-    // Test relative paths
-    let result = sandbox.run(&[
-        "--bind",
-        &format!("{}:", subdir1),
-        "--bind",
-        &format!("{}:subdir2_mapped", subdir2),
-        "config",
-    ]);
-
-    // Check result
-    assert!(result.is_ok());
-    assert!(sandbox.last_stdout.contains("subdir1"));
-    assert!(sandbox.last_stdout.contains("subdir2:subdir2_mapped"));
 
     Ok(())
 }

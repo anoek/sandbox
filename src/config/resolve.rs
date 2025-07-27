@@ -1,12 +1,14 @@
 use super::PartialConfig;
-use crate::config::Network;
-use crate::util::{can_access, can_mkdir, find_mount_point, mkdir};
+use crate::config::{BindMount, BindMountOptions, Network};
+use crate::util::{
+    can_access, can_mkdir, expand_tilde_path, find_mount_point, mkdir,
+};
 use crate::{config::Config, types::UidGidHome, util::resolve_uid_gid_home};
 use anyhow::{Context, Result};
 use chrono::Local;
 use log::trace;
 use nix::unistd::{Gid, Uid};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 use std::{env, str::FromStr};
 use std::{
@@ -15,6 +17,36 @@ use std::{
 };
 
 use super::cli::Args;
+
+/// Parses bind mount string and expands tildes
+/// Format: source[:target[:options]]
+fn parse_bind_mount(bind_mount: &str) -> Result<BindMount> {
+    let original_string = bind_mount.to_string();
+    let parts: Vec<&str> = bind_mount.splitn(3, ':').collect();
+
+    let source = expand_tilde_path(Path::new(parts[0]))?;
+    let target = if parts.len() >= 2 && !parts[1].is_empty() {
+        expand_tilde_path(Path::new(parts[1]))?
+    } else {
+        source.clone()
+    };
+
+    let source = source.canonicalize()?;
+    let target = target.canonicalize()?;
+
+    let options = if parts.len() >= 3 {
+        BindMountOptions::from_str(parts[2])?
+    } else {
+        BindMountOptions::ReadWrite
+    };
+
+    Ok(BindMount {
+        source,
+        target,
+        options,
+        argument: original_string,
+    })
+}
 
 pub fn resolve_config(cli: Args) -> Result<Config> {
     let uid_gid_home = resolve_uid_gid_home()?;
@@ -98,7 +130,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     if let Ok(mask_paths_env) = env::var("SANDBOX_MASK") {
         let env_mask_paths: Vec<String> = mask_paths_env
             .split(',')
-            .map(|s| s.trim().to_string())
+            .map(|s| s.trim())
             .filter(|s| !s.is_empty())
             .map(|path| format!("{}:{}:mask", path, path))
             .collect();
@@ -184,7 +216,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
             .into_iter()
             .map(|path| format!("{}:{}:mask", path, path))
             .collect();
-        
+
         match &mut partial_config.bind_mounts {
             Some(existing) => existing.extend(mask_bind_mounts),
             None => partial_config.bind_mounts = Some(mask_bind_mounts),
@@ -257,18 +289,33 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         all_bind_mounts.extend(bind_mounts);
     }
 
-    // Deduplicate bind mounts, preserving order
-    let mut bind_set: HashSet<String> = HashSet::new();
-    let bind_mounts: Vec<String> = all_bind_mounts
+    // Parse all bind mounts and check for conflicts
+    let mut target_map: HashMap<PathBuf, BindMount> = HashMap::new();
+    let bind_mounts: Vec<BindMount> = all_bind_mounts
         .into_iter()
-        .filter(|mount| {
-            if bind_set.contains(mount.as_str()) {
-                return false;
+        .map(|mount| parse_bind_mount(&mount))
+        .collect::<Result<Vec<_>>>()?;
+
+    // Check for conflicts and deduplicate
+    for mount in bind_mounts {
+        if let Some(existing) = target_map.get(&mount.target) {
+            if existing != &mount {
+                return Err(anyhow::anyhow!(
+                    "Conflicting bind mount configurations for target '{}': \n  - source: '{}' with options {:?}\n  - source: '{}' with options {:?}",
+                    mount.target.display(),
+                    existing.source.display(),
+                    existing.options,
+                    mount.source.display(),
+                    mount.options
+                ));
             }
-            bind_set.insert(mount.clone());
-            true
-        })
-        .collect();
+            // Skip duplicate (identical mount)
+        } else {
+            target_map.insert(mount.target.clone(), mount);
+        }
+    }
+
+    let bind_mounts: Vec<BindMount> = target_map.into_values().collect();
 
     if bind_mounts.is_empty() {
         sources.insert("bind_mounts".into(), "default".into());
@@ -784,6 +831,48 @@ mod tests {
         assert!(validate_config(&config).is_ok());
         config.name = ".test".to_string();
         assert!(validate_config(&config).is_ok());
+    }
+
+    #[test]
+    fn test_bind_mount_conflict_detection() {
+        use super::parse_bind_mount;
+
+        // Test parsing bind mount
+        let mount = parse_bind_mount("/run:/tmp:ro").unwrap();
+        assert_eq!(mount.source, PathBuf::from("/run"));
+        assert_eq!(mount.target, PathBuf::from("/tmp"));
+        assert!(matches!(mount.options, BindMountOptions::ReadOnly));
+        assert_eq!(mount.argument, "/run:/tmp:ro");
+
+        // Test mask parsing
+        let mount = parse_bind_mount("/run:/tmp:mask").unwrap();
+        assert!(matches!(mount.options, BindMountOptions::Mask));
+        assert_eq!(mount.argument, "/run:/tmp:mask");
+
+        // Test default source = target
+        let mount = parse_bind_mount("/tmp").unwrap();
+        assert_eq!(mount.source, mount.target);
+        assert!(matches!(mount.options, BindMountOptions::ReadWrite));
+        assert_eq!(mount.argument, "/tmp"); // no options
+
+        // Test invalid option
+        let result = parse_bind_mount("/tmp::invalid");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Unknown bind mount option: 'invalid'"));
+    }
+
+    #[test]
+    fn test_bind_mount_display() {
+        // Test that Display trait preserves original string
+        let mount = parse_bind_mount("/run:/tmp:ro").unwrap();
+        assert_eq!(mount.to_string(), "/run:/tmp:ro");
+
+        let mount = parse_bind_mount("/run").unwrap();
+        assert_eq!(mount.to_string(), "/run");
+
+        let mount = parse_bind_mount("/run:/tmp:mask").unwrap();
+        assert_eq!(mount.to_string(), "/run:/tmp:mask");
     }
 
     #[test]
