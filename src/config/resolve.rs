@@ -707,7 +707,7 @@ fn generate_timestamp_name(
     loop {
         let now = Local::now();
         let base_name =
-            format!("ephemeral_{}", now.format("%Y-%m-%d_%H:%M:%S"));
+            format!("ephemeral_{}", now.format("%Y-%m-%d_%H-%M-%S"));
 
         // Check if this name already exists
         let sandbox_path = storage_dir.join(&base_name);

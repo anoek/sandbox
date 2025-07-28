@@ -40,6 +40,7 @@
         "domifaddr",
         "eaccess",
         "EAGAIN",
+        "EINVAL",
         "elif",
         "ELOOP",
         "endmntent",

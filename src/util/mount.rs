@@ -42,17 +42,37 @@ where
     let fstype = fstype.map(|_| fstype_cstr.as_c_str());
     let data = data.map(|_| data_cstr.as_c_str());
 
-    nix::mount::mount::<CStr, CStr, CStr, CStr>(
+    let result = nix::mount::mount::<CStr, CStr, CStr, CStr>(
         source, target, fstype, flags, data,
-    )
-    .context(format!(
-        "failed to mount {} {} [type={}, flags={}, data={}]",
-        source_cstr.to_string_lossy(),
-        target_cstr.to_string_lossy(),
-        fstype_cstr.to_string_lossy(),
-        flags.bits(),
-        data_cstr.to_string_lossy(),
-    ))?;
+    );
+
+    if let Err(e) = result {
+        let err_context = format!(
+            "failed to mount {} {} [type={}, flags={}, data={}]",
+            source_cstr.to_string_lossy(),
+            target_cstr.to_string_lossy(),
+            fstype_cstr.to_string_lossy(),
+            flags.bits(),
+            data_cstr.to_string_lossy(),
+        );
+
+        // Check if this is an EINVAL error when trying to mount overlayfs
+        if e == nix::errno::Errno::EINVAL
+            && fstype_cstr.to_string_lossy() == "overlay"
+            && data
+                .map(|d| d.to_string_lossy().contains("lowerdir=/"))
+                .unwrap_or(false)
+        {
+            return Err(anyhow!(
+                "Maximum overlayfs stacking depth exceeded. \
+                The Linux kernel prevents creating overlay filesystems when the lower directory \
+                is already on an overlay filesystem. \
+                The kernel only supports up to 2 levels of overlayfs stacking by default."
+            )).context(err_context);
+        }
+
+        return Err(e).context(err_context);
+    }
 
     Ok(())
 }
