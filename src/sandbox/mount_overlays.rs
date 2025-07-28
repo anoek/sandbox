@@ -1,3 +1,4 @@
+use crate::config::Config;
 use crate::sandbox::Sandbox;
 use crate::util::{can_mkdir, mkdir};
 use anyhow::{Context, Result, anyhow};
@@ -6,19 +7,132 @@ use nix::{
     mount::MsFlags,
     unistd::{Gid, Uid},
 };
+use serde::{Deserialize, Serialize};
 use std::{ffi::CStr, path::Path};
 
 const ACCEPTABLE_MOUNT_TYPES: [&str; 7] =
     ["xfs", "nfs4", "ext2", "ext3", "ext4", "zfs", "btrfs"];
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MountHash {
     pub hash: String,
     pub dir: String,
 }
 
 impl Sandbox {
-    pub fn mount_overlays(&self) -> Result<Vec<MountHash>> {
+    pub fn mount_overlays(&self, config: &Config) -> Result<Vec<MountHash>> {
+        // Check if we have a mounts.json file in our storage dir, use it if we do
+        let mounts_json = Path::new(&config.storage_dir).join("mounts.json");
+        let mounts: Vec<MountHash> = if mounts_json.exists() {
+            debug!(
+                "It looks like we are in a nested sandbox, reading mounts from {}",
+                mounts_json.display()
+            );
+            // We're in a nested sandbox, load mounts from parent
+            let mounts_json =
+                std::fs::read_to_string(&mounts_json).context(format!(
+                    "Failed to read parent mounts.json from {}",
+                    mounts_json.display()
+                ))?;
+            serde_json::from_str(&mounts_json)
+                .context("Failed to parse parent mounts.json")?
+        } else {
+            // No mounts.json file, discover system mounts
+            self.scan_system_mounts()?
+        };
+
+        can_mkdir(&self.base, self.uid, self.gid).context(format!(
+                    "Failed to check if we can create the base directory {:?} for the sandbox failed",
+                    self.base
+                ))?;
+        mkdir(&self.base, self.uid, self.gid)?;
+        mkdir(&self.sub_storage_dir, self.uid, self.gid)?;
+
+        // Mount all overlays
+        let mut result_mounts = Vec::new();
+        for mount_entry in &mounts {
+            let hash = &mount_entry.hash;
+            let dir = &mount_entry.dir;
+
+            // Get the uid/gid of the source directory
+            let source_stat = nix::sys::stat::lstat(dir.as_str())?;
+            let source_uid = Uid::from_raw(source_stat.st_uid);
+            let source_gid = Gid::from_raw(source_stat.st_gid);
+
+            mkdir(&self.work_base.join(hash), source_uid, source_gid)?;
+            mkdir(&self.upper_base.join(hash), source_uid, source_gid)?;
+            mkdir(&self.overlay_base.join(hash), source_uid, source_gid)?;
+
+            /*
+             * index=off
+             *
+             *   Unknown if we need this option or not. Turning it on has benefits to hard links.
+             *
+             * redirect_dir=on
+             *
+             *   Allows us to rename directories without having to copy the contents.
+             *
+             *   Note: This poses a problem for online changes to the directory names
+             *   in the under fs, but docs say it won't result in a crash or deadlock.
+             *
+             *
+             * metacopy=off
+             *
+             *   From https://docs.kernel.org/filesystems/overlayfs.html:
+             *   Do not use metacopy=on with untrusted upper/lower directories. Otherwise it is
+             *   possible that an attacker can create a handcrafted file with appropriate REDIRECT
+             *   and METACOPY xattrs, and gain access to file on lower pointed by REDIRECT.
+             *
+             *   Note: They go on to say
+             *
+             *      This should not be possible on local system as setting "trusted." xattrs will
+             *      require CAP_SYS_ADMIN. But it should be possible for untrusted layers like from
+             *      a pen drive."
+             *
+             *   I don't think this is a very realistic risk, never the less it's off for now. The
+             *   only bad part about turning this off is moved files and files that just have
+             *   attributes modified will be entirely copied to the overlayfs. This is potentially
+             *   notably slower if dealing with very large files where only attributes are
+             *   changing, but that use case doesn't seem worth the added complexity and edge case
+             *   risk vector.
+             */
+            let overlayfs_options = format!(
+                "lowerdir={},upperdir={},workdir={},index=off,redirect_dir=on,metacopy=off",
+                dir,
+                self.upper_base.join(hash).display(),
+                self.work_base.join(hash).display()
+            );
+
+            /* Mount overlayfs */
+            crate::util::mount(
+                Some("overlay"),
+                self.overlay_base
+                    .join(hash)
+                    .to_str()
+                    .expect("Failed to convert path to str"),
+                Some("overlay"),
+                MsFlags::empty(),
+                Some(overlayfs_options),
+            )?;
+
+            result_mounts.push(mount_entry.clone());
+        }
+
+        result_mounts.sort_by(|a, b| a.dir.cmp(&b.dir));
+
+        // Save mount information to JSON file in our sub directory for nested sandboxes
+        let mounts_json_path = self.sub_storage_dir.join("mounts.json");
+        let mounts_json = serde_json::to_string_pretty(&result_mounts)
+            .context("Failed to serialize mounts to JSON")?;
+        std::fs::write(&mounts_json_path, mounts_json).context(format!(
+            "Failed to write mounts.json to {}",
+            mounts_json_path.display()
+        ))?;
+
+        Ok(result_mounts)
+    }
+
+    fn scan_system_mounts(&self) -> Result<Vec<MountHash>> {
         let system_mounts =
             unsafe { libc::setmntent(c"/proc/mounts".as_ptr(), c"r".as_ptr()) };
 
@@ -81,81 +195,6 @@ impl Sandbox {
                 "No suitable mounts found for sandbox, something is very wrong"
                     .to_string(),
             ));
-        }
-
-        for e in mounts.clone() {
-            let hash = e.hash;
-            let dir = e.dir;
-
-            debug!("Mounting {} to {}", dir, hash);
-
-            /* Create our directories if needed */
-            can_mkdir(&self.base, self.uid, self.gid).context(format!(
-                "Failed to check if we can create the base directory {:?} for the sandbox failed",
-                self.base
-            ))?;
-            mkdir(&self.base, self.uid, self.gid)?;
-
-            // Get the uid/gid of the source directory
-            let source_stat = nix::sys::stat::lstat(dir.as_str())?;
-            let source_uid = Uid::from_raw(source_stat.st_uid);
-            let source_gid = Gid::from_raw(source_stat.st_gid);
-
-            mkdir(&self.work_base.join(&hash), source_uid, source_gid)?;
-            mkdir(&self.upper_base.join(&hash), source_uid, source_gid)?;
-            mkdir(&self.overlay_base.join(&hash), source_uid, source_gid)?;
-
-            /*
-             * index=off
-             *
-             *   Unknown if we need this option or not. Turning it on has benefits to hard links.
-             *
-             * redirect_dir=on
-             *
-             *   Allows us to rename directories without having to copy the contents.
-             *
-             *   Note: This poses a problem for online changes to the directory names
-             *   in the under fs, but docs say it won't result in a crash or deadlock.
-             *
-             *
-             * metacopy=off
-             *
-             *   From https://docs.kernel.org/filesystems/overlayfs.html:
-             *   Do not use metacopy=on with untrusted upper/lower directories. Otherwise it is
-             *   possible that an attacker can create a handcrafted file with appropriate REDIRECT
-             *   and METACOPY xattrs, and gain access to file on lower pointed by REDIRECT.
-             *
-             *   Note: They go on to say
-             *
-             *      This should not be possible on local system as setting “trusted.” xattrs will
-             *      require CAP_SYS_ADMIN. But it should be possible for untrusted layers like from
-             *      a pen drive."
-             *
-             *   I don't think this is a very realistic risk, never the less it's off for now. The
-             *   only bad part about turning this off is moved files and files that just have
-             *   attributes modified will be entirely copied to the overlayfs. This is potentially
-             *   notably slower if dealing with very large files where only attributes are
-             *   changing, but that use case doesn't seem worth the added complexity and edge case
-             *   risk vector.
-             */
-            let overlayfs_options = format!(
-                "lowerdir={},upperdir={},workdir={},index=off,redirect_dir=on,metacopy=off",
-                dir,
-                self.upper_base.join(&hash).display(),
-                self.work_base.join(&hash).display()
-            );
-
-            /* Mount overlayfs */
-            crate::util::mount(
-                Some("overlay"),
-                self.overlay_base
-                    .join(&hash)
-                    .to_str()
-                    .expect("Failed to convert path to str"),
-                Some("overlay"),
-                MsFlags::empty(),
-                Some(overlayfs_options),
-            )?;
         }
 
         Ok(mounts)

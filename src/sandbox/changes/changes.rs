@@ -38,6 +38,8 @@ const BUILT_IN_IGNORE_PATTERNS: &[&str] = &[
     "/tmp/**",
     "/home/*/.*/**",
     "/home/*/.*",
+    "/root/.*/**",
+    "/root/.*",
     "**/.git/**",
     "**/.git",
 ];

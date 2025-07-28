@@ -83,6 +83,10 @@ impl Sandbox {
 
         unsafe {
             std::env::set_var("SANDBOX", self.name.clone());
+            std::env::set_var(
+                "SANDBOX_STORAGE_DIR",
+                self.sub_storage_dir.clone(),
+            );
         }
 
         /* We need to fork to properly enter the PID namespace */
