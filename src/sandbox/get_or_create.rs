@@ -1,5 +1,5 @@
 use super::mount_overlays::MountHash;
-use crate::config::{BindMountOptions, Config, Network};
+use crate::config::{BindMount, BindMountOptions, Config, Network};
 use crate::sandbox::Sandbox;
 #[cfg(feature = "coverage")]
 use crate::util::CLONE_FS;
@@ -51,6 +51,7 @@ impl Sandbox {
         let work_base = sandbox_base_dir.join("work");
         let upper_base = sandbox_base_dir.join("upper");
         let overlay_base = sandbox_base_dir.join("overlay");
+        let sub_base = sandbox_base_dir.join("sub");
 
         Sandbox {
             name: sandbox_name.to_string(),
@@ -58,6 +59,7 @@ impl Sandbox {
             work_base: work_base.clone(),
             upper_base: upper_base.clone(),
             overlay_base: overlay_base.clone(),
+            sub_storage_dir: sub_base.clone(),
             root_overlay: overlay_base.join(&root_suffix),
             pid: Pid::from_raw(-1),
             uid,
@@ -146,14 +148,22 @@ impl Sandbox {
             ),
         )?;
 
+        let mut config = config.clone();
+        config.bind_mounts.push(BindMount {
+            argument: "sub".to_string(),
+            source: sandbox.sub_storage_dir.clone(),
+            target: sandbox.sub_storage_dir.clone(),
+            options: BindMountOptions::ReadWrite,
+        });
+
         trace!("Mounting sandbox");
         let overlay_mounts = sandbox
-            .mount_overlays()
+            .mount_overlays(&config)
             .context(format!("failed to mount sandbox: {}", sandbox_name))?;
 
         /* Create PID 1 for our sandbox */
         sandbox.pid = match sandbox.start_sandbox(
-            config,
+            &config,
             &get_sandbox_pid_path(storage_dir, sandbox_name),
             &overlay_mounts,
         ) {
