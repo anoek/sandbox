@@ -430,11 +430,15 @@ impl Sandbox {
                         "failed to canonicalize source path: {}",
                         bind_mount.source.display()
                     ))?;
-                let canonicalized_target =
+                // Try to canonicalize target if it exists, otherwise use as-is
+                let canonicalized_target = if bind_mount.target.exists() {
                     bind_mount.target.canonicalize().context(format!(
                         "failed to canonicalize target path: {}",
                         bind_mount.target.display()
-                    ))?;
+                    ))?
+                } else {
+                    bind_mount.target.clone()
+                };
 
                 let is_dir = source.is_dir();
                 (source, canonicalized_target, is_dir)
@@ -571,6 +575,25 @@ impl Sandbox {
                 old_root_local_path.join(base).join(&mnt.hash).display(),
                 mnt.dir
             );
+
+            // Ensure parent directories exist before binding
+            // This is especially important for paths under /run which was replaced with tmpfs
+            let target_path = Path::new(&mnt.dir);
+            if let Some(parent) = target_path.parent() {
+                std::fs::create_dir_all(parent).context(format!(
+                    "Failed to create parent directories for {}",
+                    mnt.dir
+                ))?;
+            }
+            
+            // Also ensure the target directory itself exists
+            // This handles cases where the mount point doesn't exist in the new root
+            if !target_path.exists() {
+                std::fs::create_dir(target_path).context(format!(
+                    "Failed to create mount target directory {}",
+                    mnt.dir
+                ))?;
+            }
 
             mount(
                 Some(old_root_local_path.join(base).join(&mnt.hash)),

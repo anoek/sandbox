@@ -35,10 +35,17 @@ fn parse_bind_mount(bind_mount: &str) -> Result<BindMount> {
         "Failed to canonicalize source path: {}",
         source.display()
     ))?;
-    let target = target.canonicalize().context(format!(
-        "Failed to canonicalize target path: {}",
-        target.display()
-    ))?;
+    // Try to canonicalize target path if it exists on the host
+    // If it doesn't exist (e.g., /run/media/test), use it as-is since
+    // it will be created inside the container
+    let target = if target.exists() {
+        target.canonicalize().context(format!(
+            "Failed to canonicalize target path: {}",
+            target.display()
+        ))?
+    } else {
+        target
+    };
 
     let options = if parts.len() >= 3 {
         BindMountOptions::from_str(parts[2])?

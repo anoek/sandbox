@@ -82,6 +82,7 @@ test: build-coverage-binary
 	# Note: This excludes tests marked with #[ignore] (like stop --all tests)
 	sudo rm --one-file-system -Rf coverage
 	mkdir -p coverage/profraw
+	sudo mkdir -p /run/media/sandbox-coverage-testing
 	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage -- --test-threads=1
 	
 coverage coverage-report: test update-coverage-report-and-show-json
