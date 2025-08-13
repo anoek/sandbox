@@ -1,6 +1,6 @@
 [package]
 name    = "sandbox"
-version = "0.3.0-dev"
+version = "0.3.0"
 edition = "2024"
 include = ["src/**", "Cargo.toml", "clippy.toml", "*.lock", "tests/**", "Makefile"]
 
