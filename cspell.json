@@ -160,6 +160,7 @@
         "pacman",
         "pathbuf",
         "pidfd",
+        "PKGBUILD",
         "powercap",
         "profdata",
         "profraw",

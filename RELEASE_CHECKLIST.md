@@ -1,0 +1,6 @@
+-   [ ] Update version in `Cargo.toml`, build, and commit.
+-   [ ] `git tag -a 0.x.0 -m 'v0.x.0'`
+-   [ ] `git push origin 0.x.0`
+-   [ ] `make package`
+-   [ ] Release on GitHub, upload files from `dist`
+-   [ ] Update `sandbox-bin/PKGBUILD` with new versions and sha256sums, `make` to validate, commit and push.
