@@ -1,9 +1,9 @@
 use super::impls::deserialize_level_filter;
 use anyhow::Result;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BindMount {
     pub source: PathBuf,
     pub target: PathBuf,
@@ -17,7 +17,7 @@ impl std::fmt::Display for BindMount {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BindMountOptions {
     ReadWrite,
     ReadOnly,
@@ -40,7 +40,7 @@ impl std::str::FromStr for BindMountOptions {
     }
 }
 
-#[derive(Deserialize, Debug, Clone, clap::ValueEnum)]
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, clap::ValueEnum)]
 pub enum Network {
     #[serde(rename = "none")]
     None,

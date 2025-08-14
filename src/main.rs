@@ -16,12 +16,12 @@
     clippy::used_underscore_items
 )]
 
-mod actions;
-mod config;
-mod logger;
-mod sandbox;
-mod types;
-mod util;
+pub mod actions;
+pub mod config;
+pub mod logger;
+pub mod sandbox;
+pub mod types;
+pub mod util;
 
 use anyhow::{Context, Result, anyhow};
 use clap::CommandFactory;
