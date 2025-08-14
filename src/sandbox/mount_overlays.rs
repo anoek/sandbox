@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::sandbox::Sandbox;
+use crate::sandbox::{Sandbox, SandboxSettings};
 use crate::util::{can_mkdir, mkdir};
 use anyhow::{Context, Result, anyhow};
 use log::debug;
@@ -8,7 +8,10 @@ use nix::{
     unistd::{Gid, Uid},
 };
 use serde::{Deserialize, Serialize};
-use std::{ffi::CStr, path::Path};
+use std::{
+    ffi::CStr,
+    path::{Path, PathBuf},
+};
 
 const ACCEPTABLE_MOUNT_TYPES: [&str; 7] =
     ["xfs", "nfs4", "ext2", "ext3", "ext4", "zfs", "btrfs"];
@@ -21,32 +24,14 @@ pub struct MountHash {
 
 impl Sandbox {
     pub fn mount_overlays(&self, config: &Config) -> Result<Vec<MountHash>> {
-        // Check if we have a mounts.json file in our storage dir, use it if we do
-        let mounts_json = Path::new(&config.storage_dir).join("mounts.json");
-        let mounts: Vec<MountHash> = if mounts_json.exists() {
-            debug!(
-                "It looks like we are in a nested sandbox, reading mounts from {}",
-                mounts_json.display()
-            );
-            // We're in a nested sandbox, load mounts from parent
-            let mounts_json =
-                std::fs::read_to_string(&mounts_json).context(format!(
-                    "Failed to read parent mounts.json from {}",
-                    mounts_json.display()
-                ))?;
-            serde_json::from_str(&mounts_json)
-                .context("Failed to parse parent mounts.json")?
-        } else {
-            // No mounts.json file, discover system mounts
-            self.scan_system_mounts()?
-        };
+        let mounts = self.determine_mounts(config)?;
 
         can_mkdir(&self.base, self.uid, self.gid).context(format!(
                     "Failed to check if we can create the base directory {:?} for the sandbox failed",
                     self.base
                 ))?;
         mkdir(&self.base, self.uid, self.gid)?;
-        mkdir(&self.sub_storage_dir, self.uid, self.gid)?;
+        mkdir(&self.data_storage_dir, self.uid, self.gid)?;
 
         // Mount all overlays
         let mut result_mounts = Vec::new();
@@ -120,16 +105,37 @@ impl Sandbox {
 
         result_mounts.sort_by(|a, b| a.dir.cmp(&b.dir));
 
-        // Save mount information to JSON file in our sub directory for nested sandboxes
-        let mounts_json_path = self.sub_storage_dir.join("mounts.json");
-        let mounts_json = serde_json::to_string_pretty(&result_mounts)
-            .context("Failed to serialize mounts to JSON")?;
-        std::fs::write(&mounts_json_path, mounts_json).context(format!(
-            "Failed to write mounts.json to {}",
-            mounts_json_path.display()
-        ))?;
+        // Save sandbox settings to settings.json in sandbox base directory
+        let settings = SandboxSettings::from_config(config, &result_mounts);
+        settings
+            .save_to_file(&self.settings_path())
+            .context("Failed to save sandbox settings")?;
 
         Ok(result_mounts)
+    }
+
+    pub fn settings_path(&self) -> PathBuf {
+        self.data_storage_dir.join("settings.json")
+    }
+
+    pub fn determine_mounts(&self, config: &Config) -> Result<Vec<MountHash>> {
+        // Check if we have a settings.json file in our storage dir (for nested sandboxes)
+        let settings_json = Path::new(&config.storage_dir).join("settings.json");
+        if settings_json.exists() {
+            debug!(
+                "It looks like we are in a nested sandbox, reading mounts from {}",
+                settings_json.display()
+            );
+            let parent_settings = SandboxSettings::load_from_file(&settings_json)
+                .context(format!(
+                    "Failed to read parent settings.json from {}",
+                    settings_json.display()
+                ))?;
+            return Ok(parent_settings.mounts);
+        }
+
+        // No parent settings file, discover system mounts
+        self.scan_system_mounts()
     }
 
     fn scan_system_mounts(&self) -> Result<Vec<MountHash>> {

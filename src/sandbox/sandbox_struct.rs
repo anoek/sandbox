@@ -9,7 +9,7 @@ pub struct Sandbox {
     pub work_base: PathBuf,
     pub upper_base: PathBuf,
     pub overlay_base: PathBuf,
-    pub sub_storage_dir: PathBuf, // storage dir for the sub sandboxes
+    pub data_storage_dir: PathBuf, // storage dir for sandbox data and nested sandboxes
     //pub root_suffix: String,
     //pub root_work: PathBuf,
     //pub root_upper: PathBuf,

@@ -4,6 +4,14 @@ version = "0.3.0"
 edition = "2024"
 include = ["src/**", "Cargo.toml", "clippy.toml", "*.lock", "tests/**", "Makefile"]
 
+[[bin]]
+name = "sandbox"
+path = "src/main.rs"
+
+[lib]
+name = "sandbox"
+path = "src/lib.rs"
+
 [lints.rust]
 
 [features]

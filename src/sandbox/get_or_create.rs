@@ -51,7 +51,7 @@ impl Sandbox {
         let work_base = sandbox_base_dir.join("work");
         let upper_base = sandbox_base_dir.join("upper");
         let overlay_base = sandbox_base_dir.join("overlay");
-        let sub_base = sandbox_base_dir.join("sub");
+        let data_base = sandbox_base_dir.join("data");
 
         Sandbox {
             name: sandbox_name.to_string(),
@@ -59,7 +59,7 @@ impl Sandbox {
             work_base: work_base.clone(),
             upper_base: upper_base.clone(),
             overlay_base: overlay_base.clone(),
-            sub_storage_dir: sub_base.clone(),
+            data_storage_dir: data_base.clone(),
             root_overlay: overlay_base.join(&root_suffix),
             pid: Pid::from_raw(-1),
             uid,
@@ -125,6 +125,41 @@ impl Sandbox {
             Sandbox::get(storage_dir, sandbox_name, uid, gid, Some(lock))?;
 
         if let Some(sandbox) = sandbox {
+            // Validate that the existing sandbox settings are compatible with current config
+            let settings_path = sandbox.settings_path();
+            if settings_path.exists() {
+                match crate::sandbox::SandboxSettings::load_from_file(
+                    &settings_path,
+                ) {
+                    Ok(existing_settings) => {
+                        // Determine what the current mounts should be
+                        let expected_mounts = sandbox.determine_mounts(config)
+                            .context("Failed to determine expected mounts for validation")?;
+
+                        // Create a config that includes the implicit data bind mount for validation
+                        let mut validation_config = config.clone();
+                        validation_config.bind_mounts.push(BindMount {
+                            argument: "data".to_string(),
+                            source: sandbox.data_storage_dir.clone(),
+                            target: sandbox.data_storage_dir.clone(),
+                            options: BindMountOptions::ReadWrite,
+                        });
+
+                        // Validate settings compatibility
+                        existing_settings.validate_against_config(
+                            &validation_config,
+                            &expected_mounts,
+                        )?;
+                    }
+                    Err(e) => {
+                        return Err(anyhow!(
+                            "Failed to load existing sandbox settings from {}: {}. The sandbox may be corrupted.",
+                            settings_path.display(),
+                            e
+                        ));
+                    }
+                }
+            }
             return Ok(sandbox);
         }
 
@@ -150,9 +185,9 @@ impl Sandbox {
 
         let mut config = config.clone();
         config.bind_mounts.push(BindMount {
-            argument: "sub".to_string(),
-            source: sandbox.sub_storage_dir.clone(),
-            target: sandbox.sub_storage_dir.clone(),
+            argument: "data".to_string(),
+            source: sandbox.data_storage_dir.clone(),
+            target: sandbox.data_storage_dir.clone(),
             options: BindMountOptions::ReadWrite,
         });
 
@@ -585,7 +620,7 @@ impl Sandbox {
                     mnt.dir
                 ))?;
             }
-            
+
             // Also ensure the target directory itself exists
             // This handles cases where the mount point doesn't exist in the new root
             if !target_path.exists() {
