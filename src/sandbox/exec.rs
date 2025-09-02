@@ -85,7 +85,7 @@ impl Sandbox {
             std::env::set_var("SANDBOX", self.name.clone());
             std::env::set_var(
                 "SANDBOX_STORAGE_DIR",
-                self.sub_storage_dir.clone(),
+                self.data_storage_dir.clone(),
             );
         }
 
