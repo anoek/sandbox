@@ -319,7 +319,9 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     // Check for conflicts and deduplicate
     for mount in bind_mounts {
         if let Some(existing) = target_map.get(&mount.target) {
-            if existing != &mount {
+            if existing.source != mount.source
+                || existing.options != mount.options
+            {
                 return Err(anyhow::anyhow!(
                     "Conflicting bind mount configurations for target '{}': \n  - source: '{}' with options {:?}\n  - source: '{}' with options {:?}",
                     mount.target.display(),
