@@ -189,6 +189,14 @@ pub enum Action {
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,
     },
+
+    /// Delete stopped ephemeral sandboxes older than a week, and all
+    /// sandboxes left behind by the test suite
+    Clean {
+        /// Skip confirmation prompt
+        #[arg(short = 'y', long)]
+        yes: bool,
+    },
 }
 
 pub fn sandbox_name_completion(

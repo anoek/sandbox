@@ -118,11 +118,29 @@ pub fn delete(
         return Ok(());
     }
 
+    delete_sandboxes(
+        config,
+        sandboxes_storage_dir,
+        &running_sandboxes,
+        &stopped_sandboxes,
+        force,
+    )
+}
+
+/// Lists the given sandboxes, asks for confirmation unless `force` is set,
+/// then deletes them.
+pub fn delete_sandboxes(
+    config: &Config,
+    sandboxes_storage_dir: &Path,
+    running_sandboxes: &[String],
+    stopped_sandboxes: &[String],
+    force: bool,
+) -> Result<()> {
     // Show sandboxes that will be deleted and ask for confirmation
     if !force {
         outln!("The following sandboxes will be deleted:");
         for (list, stopped) in
-            [(&running_sandboxes, false), (&stopped_sandboxes, true)]
+            [(running_sandboxes, false), (stopped_sandboxes, true)]
         {
             for name in list {
                 let sandbox_entry = SandboxEntry::new(
@@ -173,7 +191,7 @@ pub fn delete(
     let mut errors = Vec::new();
 
     for (list, stopped) in
-        [(&running_sandboxes, false), (&stopped_sandboxes, true)]
+        [(running_sandboxes, false), (stopped_sandboxes, true)]
     {
         for name in list {
             let sandbox_entry = SandboxEntry::new(

@@ -148,6 +148,9 @@ pub fn main() -> Result<()> {
                 &patterns.unwrap_or_default(),
                 yes,
             ),
+            cli::Action::Clean { yes } => {
+                actions::clean(&config, &sandboxes_storage_dir, yes)
+            }
         };
         if cli.json {
             if result.is_ok() {
