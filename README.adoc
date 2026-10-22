@@ -286,6 +286,13 @@ You can also set most of the options with environment variables if you wish:
 
 Environment variables override config files, and CLI arguments take the highest precedence.
 
+Bind mounts and masks from every source are combined. If two sources bind or
+mask the same target, the more specific source wins. From lowest to highest
+precedence the sources are: default binds, `/etc`, `~/.config`, parent
+directories, the current directory (or `--config` files in the order given),
+environment variables, and CLI arguments. Different bind mounts or masks for
+the same target within a single source are an error.
+
 
 == Caveats & Limitations
 

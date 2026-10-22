@@ -63,7 +63,7 @@ fn parse_bind_mount(bind_mount: &str) -> Result<BindMount> {
 
 pub fn resolve_config(cli: Args) -> Result<Config> {
     let uid_gid_home = resolve_uid_gid_home()?;
-    let (mut partial_config, mut sources, config_files) =
+    let (mut partial_config, mut sources, config_files, mut bind_layers) =
         load_partial(cli.no_config, cli.config.clone())?;
 
     // Check for mutually exclusive name options
@@ -123,7 +123,8 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
 
-    // Handle bind mounts from environment variable (additive)
+    // Bind mounts and masks from environment variables form a single layer
+    let mut env_bind_layer = vec![];
     if let Ok(bind_mounts_env) = env::var("SANDBOX_BIND") {
         let env_bind_mounts: Vec<String> = bind_mounts_env
             .split(',')
@@ -132,15 +133,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
             .collect();
 
         if !env_bind_mounts.is_empty() {
-            match &mut partial_config.bind {
-                Some(existing) => existing.extend(env_bind_mounts),
-                None => partial_config.bind = Some(env_bind_mounts),
-            }
+            env_bind_layer.extend(env_bind_mounts);
             sources.insert("bind_mounts".into(), "environment".into());
         }
     }
 
-    // Handle mask paths from environment variable (additive)
     if let Ok(mask_paths_env) = env::var("SANDBOX_MASK") {
         let env_mask_paths: Vec<String> = mask_paths_env
             .split(',')
@@ -150,13 +147,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
             .collect();
 
         if !env_mask_paths.is_empty() {
-            match &mut partial_config.bind {
-                Some(existing) => existing.extend(env_mask_paths),
-                None => partial_config.bind = Some(env_mask_paths),
-            }
+            env_bind_layer.extend(env_mask_paths);
             sources.insert("bind_mounts".into(), "environment".into());
         }
     }
+    bind_layers.push(env_bind_layer);
 
     if let Ok(no_default_binds_env) = env::var("SANDBOX_NO_DEFAULT_BINDS") {
         let no_default_binds_val = bool::from_str(&no_default_binds_env)
@@ -216,26 +211,16 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("no_default_binds".into(), "cli".into());
     }
 
-    // Handle bind mounts from CLI (additive)
-    if let Some(cli_bind_mounts) = cli.bind {
-        match &mut partial_config.bind {
-            Some(existing) => existing.extend(cli_bind_mounts),
-            None => partial_config.bind = Some(cli_bind_mounts),
-        }
-    }
-
-    // Handle mask entries from CLI - convert to bind mounts with mask option
+    // Bind mounts and masks from the CLI form the highest precedence layer
+    let mut cli_bind_layer = cli.bind.unwrap_or_default();
     if let Some(cli_mask_paths) = cli.mask {
-        let mask_bind_mounts: Vec<String> = cli_mask_paths
-            .into_iter()
-            .map(|path| format!("{}:{}:mask", path, path))
-            .collect();
-
-        match &mut partial_config.bind {
-            Some(existing) => existing.extend(mask_bind_mounts),
-            None => partial_config.bind = Some(mask_bind_mounts),
-        }
+        cli_bind_layer.extend(
+            cli_mask_paths
+                .into_iter()
+                .map(|path| format!("{}:{}:mask", path, path)),
+        );
     }
+    bind_layers.push(cli_bind_layer);
 
     // If nothing else, fill in with some default values
     let name = partial_config.name.unwrap_or("sandbox".to_string());
@@ -290,51 +275,39 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         .join(cwd.strip_prefix(&mp)?);
     sources.insert("overlay_cwd".into(), "derived from storage_dir".into());
 
-    // Collect all bind mounts including defaults
-    let mut all_bind_mounts = vec![];
-
-    // Add default bind mounts unless disabled
+    // Default bind mounts are the lowest precedence layer
     if !no_default_binds {
-        let default_binds = get_default_bind_mounts(&net, &uid_gid_home);
-        all_bind_mounts.extend(default_binds);
+        bind_layers.insert(0, get_default_bind_mounts(&net, &uid_gid_home));
     }
 
-    if let Some(bind_mounts) = partial_config.bind {
-        all_bind_mounts.extend(bind_mounts);
-    }
-
-    if let Some(masks) = partial_config.mask {
-        for mask in masks {
-            all_bind_mounts.push(format!("{}::mask", mask));
-        }
-    }
-
-    // Parse all bind mounts and check for conflicts
+    // Resolve bind mounts layer by layer from lowest to highest precedence.
+    // Conflicting mounts within a single layer are an error, while a mount in
+    // a higher precedence layer overrides any mount with the same target in a
+    // lower precedence layer.
     let mut target_map: HashMap<PathBuf, BindMount> = HashMap::new();
-    let bind_mounts: Vec<BindMount> = all_bind_mounts
-        .into_iter()
-        .map(|mount| parse_bind_mount(&mount))
-        .collect::<Result<Vec<_>>>()?;
-
-    // Check for conflicts and deduplicate
-    for mount in bind_mounts {
-        if let Some(existing) = target_map.get(&mount.target) {
-            if existing.source != mount.source
-                || existing.options != mount.options
-            {
-                return Err(anyhow::anyhow!(
-                    "Conflicting bind mount configurations for target '{}': \n  - source: '{}' with options {:?}\n  - source: '{}' with options {:?}",
-                    mount.target.display(),
-                    existing.source.display(),
-                    existing.options,
-                    mount.source.display(),
-                    mount.options
-                ));
+    for layer in bind_layers {
+        let mut layer_map: HashMap<PathBuf, BindMount> = HashMap::new();
+        for mount in layer {
+            let mount = parse_bind_mount(&mount)?;
+            if let Some(existing) = layer_map.get(&mount.target) {
+                if existing.source != mount.source
+                    || existing.options != mount.options
+                {
+                    return Err(anyhow::anyhow!(
+                        "Conflicting bind mount configurations for target '{}': \n  - source: '{}' with options {:?}\n  - source: '{}' with options {:?}",
+                        mount.target.display(),
+                        existing.source.display(),
+                        existing.options,
+                        mount.source.display(),
+                        mount.options
+                    ));
+                }
+                // Skip duplicate (identical mount)
+            } else {
+                layer_map.insert(mount.target.clone(), mount);
             }
-            // Skip duplicate (identical mount)
-        } else {
-            target_map.insert(mount.target.clone(), mount);
         }
+        target_map.extend(layer_map);
     }
 
     let bind_mounts: Vec<BindMount> = target_map.into_values().collect();
@@ -538,10 +511,23 @@ pub fn resolve_sandbox_storage_dir(
     ))
 }
 
+/// Bind mount arguments grouped by the config source they came from
+type BindLayer = Vec<String>;
+
+/// Merged config, value sources, loaded config files, and bind layers
+type LoadedPartial = (
+    PartialConfig,
+    HashMap<String, String>,
+    Vec<PathBuf>,
+    Vec<BindLayer>,
+);
+
+/// Loads and merges config files. Bind mounts are returned as one layer per
+/// config file, ordered from lowest to highest precedence.
 pub fn load_partial(
     no_config: bool,
     config_files: Option<Vec<String>>,
-) -> Result<(PartialConfig, HashMap<String, String>, Vec<PathBuf>)> {
+) -> Result<LoadedPartial> {
     let (config_paths, config_source) = if no_config {
         (vec![], "no-config")
     } else if let Some(files) = config_files {
@@ -578,10 +564,11 @@ pub fn load_partial(
     }
     if config_paths.is_empty() {
         trace!("No config files found, using default config");
-        return Ok((PartialConfig::default(), sources, vec![]));
+        return Ok((PartialConfig::default(), sources, vec![], vec![]));
     }
 
     let mut merged_config = PartialConfig::default();
+    let mut bind_layers = vec![];
     for path in config_paths.iter() {
         let config_str = std::fs::read_to_string(path).context(format!(
             "Failed to read config file {}",
@@ -595,6 +582,7 @@ pub fn load_partial(
         merge_configs(
             &mut merged_config,
             &mut sources,
+            &mut bind_layers,
             config,
             path.to_str()
                 .context("Failed to convert config path to str")?,
@@ -602,7 +590,7 @@ pub fn load_partial(
         trace!("Loaded config file: {}", path.display());
     }
 
-    Ok((merged_config, sources, config_paths))
+    Ok((merged_config, sources, config_paths, bind_layers))
 }
 
 /** Returns a vec of all config files found */
@@ -650,6 +638,7 @@ fn find_config_files() -> Result<Vec<PathBuf>> {
 fn merge_configs(
     base: &mut PartialConfig,
     sources: &mut HashMap<String, String>,
+    bind_layers: &mut Vec<BindLayer>,
     override_config: PartialConfig,
     source: &str,
 ) {
@@ -677,21 +666,17 @@ fn merge_configs(
         base.no_default_binds = Some(no_default_binds);
         sources.insert("no_default_binds".into(), source.into());
     }
-    // Handle bind_mounts additively
+    // Bind mounts and masks from each config file form their own layer
+    let mut bind_layer = vec![];
     if let Some(bind_mounts) = override_config.bind {
-        match &mut base.bind {
-            Some(existing) => existing.extend(bind_mounts),
-            None => base.bind = Some(bind_mounts),
-        }
+        bind_layer.extend(bind_mounts);
         sources.insert("bind".into(), source.into());
     }
     if let Some(mask) = override_config.mask {
-        match &mut base.mask {
-            Some(existing) => existing.extend(mask),
-            None => base.mask = Some(mask),
-        }
+        bind_layer.extend(mask.into_iter().map(|m| format!("{}::mask", m)));
         sources.insert("mask".into(), source.into());
     }
+    bind_layers.push(bind_layer);
 }
 
 fn validate_config(config: &Config) -> Result<()> {
@@ -940,10 +925,7 @@ mod tests {
     fn test_merge_configs() {
         let mut base = PartialConfig::default();
         let mut sources = HashMap::new();
-        let mut base_with_binds = PartialConfig {
-            bind: Some(vec!["/tmp/test1".to_string()]),
-            ..PartialConfig::default()
-        };
+        let mut bind_layers = vec![];
 
         let override_config = PartialConfig {
             log_level: Some(LevelFilter::Debug),
@@ -962,12 +944,14 @@ mod tests {
         merge_configs(
             &mut base,
             &mut sources,
+            &mut bind_layers,
             override_config.clone(),
             "test-config",
         );
         merge_configs(
-            &mut base_with_binds,
+            &mut base,
             &mut sources,
+            &mut bind_layers,
             override_config,
             "test-config",
         );
@@ -978,18 +962,14 @@ mod tests {
         assert_eq!(base.storage_dir, Some("/tmp/test".to_string()));
         assert!(matches!(base.net, Some(Network::Host)));
         assert_eq!(base.ignored, Some(true));
-        assert_eq!(
-            base.bind,
-            Some(vec!["/tmp/test1".to_string(), "/tmp/test2".to_string()])
-        );
-        assert_eq!(
-            base_with_binds.bind,
-            Some(vec![
-                "/tmp/test1".to_string(),
-                "/tmp/test1".to_string(),
-                "/tmp/test2".to_string(),
-            ])
-        );
+
+        // Each merged config produces its own bind layer
+        let expected_layer = vec![
+            "/tmp/test1".to_string(),
+            "/tmp/test2".to_string(),
+            "/tmp/test3::mask".to_string(),
+        ];
+        assert_eq!(bind_layers, vec![expected_layer.clone(), expected_layer]);
         assert_eq!(base.no_default_binds, Some(true));
 
         // Verify sources tracking
