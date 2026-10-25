@@ -26,7 +26,7 @@ use nix::{
 use std::ffi::CString;
 use std::os::{
     fd::{AsRawFd, OwnedFd},
-    unix::fs::symlink,
+    unix::fs::{MetadataExt, symlink},
 };
 use std::path::Path;
 use std::path::PathBuf;
@@ -460,6 +460,10 @@ impl Sandbox {
             staging_path: PathBuf,
             final_target: PathBuf,
             is_dir: bool,
+            // Owner and mode of the target's ancestor directories on the
+            // host, so any we have to create (e.g. /run/user/1000 on our
+            // /run tmpfs) can mirror the host
+            host_ancestors: Vec<(PathBuf, std::fs::Metadata)>,
         }
         let mut bind_mount_infos: Vec<BindMountInfo> = Vec::new();
 
@@ -600,11 +604,22 @@ impl Sandbox {
                 );
             }
 
+            let host_ancestors = canonicalized_target
+                .ancestors()
+                .skip(1)
+                .filter_map(|ancestor| {
+                    std::fs::metadata(ancestor)
+                        .ok()
+                        .map(|metadata| (ancestor.to_path_buf(), metadata))
+                })
+                .collect();
+
             // Store info for later relocation
             bind_mount_infos.push(BindMountInfo {
                 staging_path: staging_path_container,
                 final_target: canonicalized_target.to_path_buf(),
                 is_dir,
+                host_ancestors,
             });
         }
 
@@ -888,15 +903,30 @@ impl Sandbox {
                     .unwrap_or(&bind_info.final_target),
             );
 
-            final_target
-                .parent()
-                .map(|parent| {
-                    std::fs::create_dir_all(parent).context(format!(
-                        "Failed to create parent directories for {}",
-                        final_target.display()
-                    ))
-                })
-                .transpose()?;
+            let mut missing_ancestors: Vec<&Path> = final_target
+                .ancestors()
+                .skip(1)
+                .take_while(|ancestor| !ancestor.exists())
+                .collect();
+            missing_ancestors.reverse();
+            for ancestor in missing_ancestors {
+                std::fs::create_dir(ancestor).context(format!(
+                    "Failed to create parent directories for {}",
+                    final_target.display()
+                ))?;
+                if let Some((_, metadata)) = bind_info
+                    .host_ancestors
+                    .iter()
+                    .find(|(path, _)| path == ancestor)
+                {
+                    std::os::unix::fs::chown(
+                        ancestor,
+                        Some(metadata.uid()),
+                        Some(metadata.gid()),
+                    )?;
+                    std::fs::set_permissions(ancestor, metadata.permissions())?;
+                }
+            }
 
             // Create the target file or directory only if it doesn't exist
             // This prevents creating entries in the overlay's upper layer when

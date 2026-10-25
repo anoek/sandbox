@@ -199,6 +199,15 @@ Examples:
 Disable default system bind mounts (e.g., /dev/fuse, D-Bus sockets, user directories).
 This is useful when you want complete control over what gets mounted into the sandbox.
 
+`--audio`::
+Allow audio inside the sandbox by binding the PipeWire and PulseAudio sockets
+from `$XDG_RUNTIME_DIR` and the ALSA devices in `/dev/snd`. Audio is disabled
+by default because this also allows sandboxed programs to record from your
+microphone. Audio works with or without `--net`, and is not affected by
+`--no-default-binds`. To enable audio by default you can store `audio = true`
+in a config file, and `SANDBOX_AUDIO=false` will override that for a single
+run.
+
 `--json`::
 Formats action output as a JSON blob. Does nothing for sandboxed commands
 

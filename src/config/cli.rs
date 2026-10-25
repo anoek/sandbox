@@ -76,6 +76,11 @@ pub struct Args {
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub no_default_binds: bool,
 
+    /// Allow access to audio devices (PipeWire, PulseAudio, and ALSA). Note this
+    /// also allows recording from microphones.
+    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
+    pub audio: bool,
+
     /// Formats action output as a JSON blob. Does nothing for sandboxed commands.
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub json: bool,

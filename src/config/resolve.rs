@@ -160,6 +160,18 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("no_default_binds".into(), "environment".into());
     }
 
+    if let Ok(audio_env) = env::var("SANDBOX_AUDIO") {
+        if let Ok(audio_val) = bool::from_str(&audio_env) {
+            partial_config.audio = Some(audio_val);
+            sources.insert("audio".into(), "environment".into());
+        } else {
+            return Err(anyhow::anyhow!(
+                "Invalid value for SANDBOX_AUDIO: {}",
+                audio_env
+            ));
+        }
+    }
+
     // Override with CLI args if provided (highest precedence)
     if let Some(log_level) = cli.log_level {
         partial_config.log_level = Some(log_level);
@@ -211,6 +223,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("no_default_binds".into(), "cli".into());
     }
 
+    if cli.audio {
+        partial_config.audio = Some(true);
+        sources.insert("audio".into(), "cli".into());
+    }
+
     // Bind mounts and masks from the CLI form the highest precedence layer
     let mut cli_bind_layer = cli.bind.unwrap_or_default();
     if let Some(cli_mask_paths) = cli.mask {
@@ -241,6 +258,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     let no_default_binds = partial_config.no_default_binds.unwrap_or(false);
     if !sources.contains_key("no_default_binds") {
         sources.insert("no_default_binds".into(), "default".into());
+    }
+
+    let audio = partial_config.audio.unwrap_or(false);
+    if !sources.contains_key("audio") {
+        sources.insert("audio".into(), "default".into());
     }
 
     let storage_dir = resolve_sandbox_storage_dir(
@@ -274,6 +296,12 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         .join(&hash)
         .join(cwd.strip_prefix(&mp)?);
     sources.insert("overlay_cwd".into(), "derived from storage_dir".into());
+
+    // Audio bind mounts sit just above the default bind mounts. They are
+    // explicitly requested, so --no-default-binds does not disable them.
+    if audio {
+        bind_layers.insert(0, get_audio_bind_mounts());
+    }
 
     // Default bind mounts are the lowest precedence layer
     if !no_default_binds {
@@ -328,6 +356,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources,
         bind_mounts,
         no_default_binds,
+        audio,
         config_files,
     };
 
@@ -399,6 +428,30 @@ fn get_default_bind_mounts(
     }
 
     default_binds
+}
+
+fn get_audio_bind_mounts() -> Vec<String> {
+    let mut audio_binds = Vec::new();
+
+    // ALSA devices for applications that access the hardware directly
+    if Path::new("/dev/snd").exists() {
+        audio_binds.push("/dev/snd".to_string());
+    }
+
+    // PipeWire and PulseAudio (pipewire-pulse) sockets
+    let xdg_runtime_dir =
+        env::var("XDG_RUNTIME_DIR").ok().filter(|s| !s.is_empty());
+
+    if let Some(xdg_runtime_dir) = xdg_runtime_dir {
+        for name in ["pipewire-0", "pulse"] {
+            let path = Path::new(&xdg_runtime_dir).join(name);
+            if path.exists() {
+                audio_binds.push(path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    audio_binds
 }
 
 pub fn resolve_sandbox_storage_dir(
@@ -666,6 +719,10 @@ fn merge_configs(
         base.no_default_binds = Some(no_default_binds);
         sources.insert("no_default_binds".into(), source.into());
     }
+    if let Some(audio) = override_config.audio {
+        base.audio = Some(audio);
+        sources.insert("audio".into(), source.into());
+    }
     // Bind mounts and masks from each config file form their own layer
     let mut bind_layer = vec![];
     if let Some(bind_mounts) = override_config.bind {
@@ -864,6 +921,7 @@ mod tests {
             log_level: LevelFilter::Info,
             bind_mounts: vec![],
             no_default_binds: false,
+            audio: false,
             config_files: vec![],
         };
         assert!(validate_config(&config).is_ok());
@@ -939,6 +997,7 @@ mod tests {
             ]),
             mask: Some(vec!["/tmp/test3".to_string()]),
             no_default_binds: Some(true),
+            audio: Some(true),
         };
 
         merge_configs(
@@ -962,6 +1021,7 @@ mod tests {
         assert_eq!(base.storage_dir, Some("/tmp/test".to_string()));
         assert!(matches!(base.net, Some(Network::Host)));
         assert_eq!(base.ignored, Some(true));
+        assert_eq!(base.audio, Some(true));
 
         // Each merged config produces its own bind layer
         let expected_layer = vec![

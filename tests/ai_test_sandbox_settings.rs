@@ -27,6 +27,7 @@ fn create_test_config() -> ::sandbox::config::Config {
         ignored: false,
         bind_mounts: Vec::new(),
         no_default_binds: false,
+        audio: false,
         config_files: Vec::new(),
     }
 }

@@ -59,6 +59,7 @@ pub struct PartialConfig {
     pub bind: Option<Vec<String>>,
     pub mask: Option<Vec<String>>,
     pub no_default_binds: Option<bool>,
+    pub audio: Option<bool>,
 }
 
 #[derive(Clone)]
@@ -74,5 +75,6 @@ pub struct Config {
     pub ignored: bool,
     pub bind_mounts: Vec<BindMount>,
     pub no_default_binds: bool,
+    pub audio: bool,
     pub config_files: Vec<PathBuf>,
 }
