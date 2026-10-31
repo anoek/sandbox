@@ -81,6 +81,23 @@ pub struct Args {
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub audio: bool,
 
+    /// Limit how many CPUs the sandbox can use. Fractional values such as 1.5
+    /// are allowed. Negative values mean all but that many CPUs, so -2 on a
+    /// 32 CPU machine allows the sandbox to use 30. Requires cgroup v2.
+    #[arg(
+        long,
+        global = true,
+        allow_negative_numbers = true,
+        value_name = "CPUS"
+    )]
+    pub cpus: Option<String>,
+
+    /// Limit how much memory the sandbox can use, for example 512M or 4G.
+    /// Swap is not available to sandboxes with a memory limit. Requires
+    /// cgroup v2.
+    #[arg(long, global = true, value_name = "SIZE")]
+    pub memory: Option<String>,
+
     /// Formats action output as a JSON blob. Does nothing for sandboxed commands.
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub json: bool,

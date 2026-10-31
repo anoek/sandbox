@@ -17,6 +17,8 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
             "mask",
             "no_default_binds",
             "audio",
+            "cpus",
+            "memory",
             "storage_dir",
             "sandbox_dir",
             "upper_cwd",
@@ -47,6 +49,12 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
 
     let no_default_binds_str = format!("{}", config.no_default_binds);
     let audio_str = format!("{}", config.audio);
+    let cpus_str = config
+        .cpus
+        .map_or("unlimited".to_string(), |cpus| cpus.to_string());
+    let memory_str = config
+        .memory
+        .map_or("unlimited".to_string(), |memory| memory.to_string());
     let ignored_str = format!("{}", config.ignored);
     let config_files_str = config
         .config_files
@@ -78,6 +86,8 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
                 ("no_default_binds", no_default_binds_str.as_str())
             }
             "audio" => ("audio", audio_str.as_str()),
+            "cpus" => ("cpus", cpus_str.as_str()),
+            "memory" => ("memory", memory_str.as_str()),
             "name" => ("name", config.name.as_str()),
             "log_level" => ("log_level", config.log_level.as_str()),
             "ignored" => ("ignored", ignored_str.as_str()),

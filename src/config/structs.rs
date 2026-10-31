@@ -1,4 +1,5 @@
 use super::impls::deserialize_level_filter;
+use super::limits::deserialize_number_or_string;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
@@ -60,6 +61,10 @@ pub struct PartialConfig {
     pub mask: Option<Vec<String>>,
     pub no_default_binds: Option<bool>,
     pub audio: Option<bool>,
+    #[serde(deserialize_with = "deserialize_number_or_string", default)]
+    pub cpus: Option<String>,
+    #[serde(deserialize_with = "deserialize_number_or_string", default)]
+    pub memory: Option<String>,
 }
 
 #[derive(Clone)]
@@ -76,5 +81,9 @@ pub struct Config {
     pub bind_mounts: Vec<BindMount>,
     pub no_default_binds: bool,
     pub audio: bool,
+    /// Number of CPUs the sandbox may use, None for unlimited
+    pub cpus: Option<f64>,
+    /// Bytes of memory the sandbox may use, None for unlimited
+    pub memory: Option<u64>,
     pub config_files: Vec<PathBuf>,
 }

@@ -62,6 +62,9 @@ pub const CLONE_NEWUSER: u64 = libc::CLONE_NEWUSER as u64; /* New user namespace
 pub const CLONE_NEWPID: u64 = libc::CLONE_NEWPID as u64; /* New pid namespace */
 #[allow(dead_code)]
 pub const CLONE_NEWNET: u64 = libc::CLONE_NEWNET as u64; /* New network namespace */
+/// Start the child in the cgroup given by Clone3Args::cgroup (since Linux 5.7).
+/// Not yet defined by the libc crate.
+pub const CLONE_INTO_CGROUP: u64 = 0x200000000;
 #[allow(dead_code)]
 pub const CLONE_IO: u64 = libc::CLONE_IO as u64; /* Clone I/O context */
 

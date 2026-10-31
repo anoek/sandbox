@@ -1,3 +1,4 @@
+use super::cgroup::remove_cgroup;
 use super::mount_overlays::MountHash;
 use crate::config::{BindMount, BindMountOptions, Config, Network};
 use crate::sandbox::Sandbox;
@@ -7,9 +8,9 @@ use crate::util::Lock;
 use crate::util::get_running_sandbox_pid;
 use crate::util::get_sandbox_pid_path;
 use crate::util::{
-    CLONE_NEWCGROUP, CLONE_NEWIPC, CLONE_NEWNET, CLONE_NEWNS, CLONE_NEWPID,
-    CLONE_NEWUTS, Clone3Args, check_path_for_mount_option_compatibility,
-    clone3, mkdir, mount,
+    CLONE_INTO_CGROUP, CLONE_NEWCGROUP, CLONE_NEWIPC, CLONE_NEWNET,
+    CLONE_NEWNS, CLONE_NEWPID, CLONE_NEWUTS, Clone3Args,
+    check_path_for_mount_option_compatibility, clone3, mkdir, mount,
 };
 use anyhow::Context;
 use anyhow::{Result, anyhow};
@@ -191,20 +192,35 @@ impl Sandbox {
             options: BindMountOptions::ReadWrite,
         });
 
-        trace!("Mounting sandbox");
-        let overlay_mounts = sandbox
-            .mount_overlays(&config)
-            .context(format!("failed to mount sandbox: {}", sandbox_name))?;
+        /* Create a cgroup to enforce any resource limits. We do this first
+         * so we fail before mounting anything if limits aren't available. */
+        let cgroup = sandbox
+            .create_cgroup(&config)
+            .context("Failed to set up resource limits")?;
 
-        /* Create PID 1 for our sandbox */
-        sandbox.pid = match sandbox.start_sandbox(
-            &config,
-            &get_sandbox_pid_path(storage_dir, sandbox_name),
-            &overlay_mounts,
-        ) {
+        trace!("Mounting sandbox");
+        let started = sandbox
+            .mount_overlays(&config)
+            .context(format!("failed to mount sandbox: {}", sandbox_name))
+            .and_then(|overlay_mounts| {
+                /* Create PID 1 for our sandbox */
+                sandbox
+                    .start_sandbox(
+                        &config,
+                        &get_sandbox_pid_path(storage_dir, sandbox_name),
+                        &overlay_mounts,
+                        cgroup.as_ref(),
+                    )
+                    .map_err(|e| anyhow!("Failed to start sandbox: {}", e))
+            });
+
+        sandbox.pid = match started {
             Ok(pid) => pid,
             Err(e) => {
-                return Err(anyhow!("Failed to start sandbox: {}", e));
+                if cgroup.is_some() {
+                    remove_cgroup(&sandbox.cgroup_path());
+                }
+                return Err(e);
             }
         };
 
@@ -220,6 +236,7 @@ impl Sandbox {
         config: &Config,
         pid_file: &PathBuf,
         overlay_mounts: &Vec<MountHash>,
+        cgroup: Option<&OwnedFd>,
     ) -> Result<Pid> {
         // create a pipe between ourselves and the main sandbox process so the main sandbox process can
         // let us know when it's done setting up the namespaces
@@ -238,7 +255,10 @@ impl Sandbox {
                 | CLONE_NEWPID
                 | CLONE_NEWIPC
                 | CLONE_NEWUTS
-                | CLONE_NEWCGROUP,
+                | CLONE_NEWCGROUP
+                // Starting in our cgroup also makes it the root of our cgroup namespace
+                | cgroup.map_or(0, |_| CLONE_INTO_CGROUP),
+            cgroup: cgroup.map_or(0, |fd| fd.as_raw_fd() as u64),
             ..Default::default()
         };
 

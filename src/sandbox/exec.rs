@@ -82,6 +82,11 @@ impl Sandbox {
             libc::prctl(libc::PR_SET_DUMPABLE, 1);
         };
 
+        /* Join the sandbox's cgroup so we're subject to its resource limits.
+         * This needs to happen before we enter the sandbox's mount namespace,
+         * where the cgroup filesystem is read-only. */
+        self.join_cgroup()?;
+
         /* Join the sandbox namespaces */
         let pid_fd = pidfd_open(self.pid, 0)?;
         if (unsafe { setns(pid_fd, ns_flags) }) != 0 {

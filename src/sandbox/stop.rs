@@ -1,4 +1,5 @@
 use crate::sandbox::Sandbox;
+use crate::sandbox::cgroup::remove_cgroup;
 use anyhow::{Context, Result};
 use log::trace;
 use nix::{fcntl::readlink, unistd::Pid};
@@ -16,6 +17,9 @@ impl Sandbox {
                 self.base.display(),
                 pid
             );
+
+            // Find our cgroup before our processes go away
+            let cgroup = self.running_cgroup();
 
             #[cfg(feature = "coverage")]
             if std::env::var_os("TEST_STOP_RACE").is_some() {
@@ -133,6 +137,10 @@ impl Sandbox {
                         }
                     }
                 }
+            }
+
+            if let Some(cgroup) = cgroup {
+                remove_cgroup(&cgroup);
             }
         }
 

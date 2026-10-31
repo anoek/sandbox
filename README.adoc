@@ -208,6 +208,24 @@ microphone. Audio works with or without `--net`, and is not affected by
 in a config file, and `SANDBOX_AUDIO=false` will override that for a single
 run.
 
+`--cpus=<CPUS>`::
+Limit how many CPUs the sandbox can use. Fractional values such as `1.5` are
+allowed. Negative values mean all but that many CPUs, so `--cpus=-2` on a 32
+CPU machine lets the sandbox use 30. This limits the total CPU time the
+sandbox gets, it does not pin it to specific CPUs, so tools like `nproc` will
+still report every CPU.
+
+`--memory=<SIZE>`::
+Limit how much memory the sandbox can use, for example `512M` or `4G`.
+Suffixes are binary (`1K` is 1024 bytes). Swap is not available to a sandbox
+with a memory limit, and when the sandbox runs out of memory the kernel kills
+its largest process.
++
+Resource limits use cgroup v2 and apply to every process in the sandbox. They
+are set when the sandbox starts, so you need to stop the sandbox to change
+them. They may not be available when `sandbox` is run inside a container or
+another sandbox.
+
 `--json`::
 Formats action output as a JSON blob. Does nothing for sandboxed commands
 
@@ -278,6 +296,10 @@ These config files can set most of the CLI options:
   mask=[
     "~/.ssh",
   ]
+
+  # Resource limits
+  cpus=-2
+  memory="8G"
 ```
 
 ## Environment Variables
@@ -290,6 +312,8 @@ You can also set most of the options with environment variables if you wish:
   SANDBOX_NET="none"
   SANDBOX_LOG_LEVEL="info"
   SANDBOX_BIND="/my/dir"
+  SANDBOX_CPUS="-2"
+  SANDBOX_MEMORY="8G"
 
 ```
 
