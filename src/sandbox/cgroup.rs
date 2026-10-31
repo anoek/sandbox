@@ -32,13 +32,6 @@ impl Sandbox {
         format!("{}-{}", self.uid, self.name)
     }
 
-    /// Our cgroup's path relative to the cgroup root, as shown in /proc/<pid>/cgroup
-    fn cgroup_relative_path(&self) -> PathBuf {
-        Path::new("/")
-            .join(cgroup_parent())
-            .join(self.cgroup_name())
-    }
-
     pub(crate) fn cgroup_path(&self) -> PathBuf {
         Path::new(CGROUP_ROOT)
             .join(cgroup_parent())
@@ -167,17 +160,22 @@ impl Sandbox {
         Ok(())
     }
 
-    /// Returns the path to our cgroup if our sandbox is running in one
+    /// Returns the path to our cgroup if our sandbox is running in one. We
+    /// go by the cgroup our PID 1 is in rather than the name we'd give a new
+    /// cgroup, because the uid in the name is that of the user who started
+    /// the sandbox, which isn't always ours (e.g. `delete` doesn't know it).
     pub(crate) fn running_cgroup(&self) -> Option<PathBuf> {
         let cgroups =
             std::fs::read_to_string(format!("/proc/{}/cgroup", self.pid))
                 .ok()?;
-        let current = cgroups.lines().find_map(|line| line.strip_prefix("0::"));
-        if current.map(Path::new) == Some(&self.cgroup_relative_path()) {
-            Some(self.cgroup_path())
-        } else {
-            None
-        }
+        let current =
+            cgroups.lines().find_map(|line| line.strip_prefix("0::"))?;
+        let relative = Path::new(current).strip_prefix("/").ok()?;
+        let cgroup_name =
+            relative.strip_prefix(cgroup_parent()).ok()?.to_str()?;
+        let (uid, name) = cgroup_name.split_once('-')?;
+        (uid.parse::<u32>().is_ok() && name == self.name)
+            .then(|| Path::new(CGROUP_ROOT).join(relative))
     }
 
     /// Moves the current process into our sandbox's cgroup, if it has one,
@@ -192,11 +190,13 @@ impl Sandbox {
     }
 }
 
-/// Kills anything left in a cgroup and removes it. Removal can't succeed
-/// until killed processes finish exiting, so we wait a little while for that.
+/// Removes a cgroup once the processes in it have exited, waiting a little
+/// while for that. Sandbox processes have already been killed by this point.
+/// The only other processes in the cgroup are the `sandbox` commands waiting
+/// on them, which exit by themselves once their child is gone, so they get to
+/// report its exit status instead of being killed too.
 pub(crate) fn remove_cgroup(path: &Path) {
     trace!("Removing cgroup {}", path.display());
-    let _ = std::fs::write(path.join("cgroup.kill"), "1");
     let deadline = Instant::now() + Duration::from_secs(5);
     while std::fs::remove_dir(path).is_err() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(10));

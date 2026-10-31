@@ -600,3 +600,20 @@ fn ai_test_limits_nested(mut sandbox: SandboxManager) -> Result<()> {
     );
     Ok(())
 }
+
+#[rstest]
+fn ai_test_limits_delete_removes_cgroup(
+    mut sandbox: SandboxManager,
+) -> Result<()> {
+    if !limits_available(&mut sandbox) {
+        return Ok(());
+    }
+
+    // delete stops sandboxes without knowing which user started them, so
+    // it has to find the cgroup from the running sandbox
+    let cgroup = host_cgroup(&sandbox).expect("sandbox cgroup should exist");
+    let name = sandbox.name.clone();
+    sandbox.run(&["delete", "-y", &name])?;
+    assert!(!cgroup.exists());
+    Ok(())
+}
