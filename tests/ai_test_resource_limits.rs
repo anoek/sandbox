@@ -454,19 +454,27 @@ fn ai_test_limits_no_swap_accounting(
     }
     sandbox.run(&["stop"])?;
 
-    // Without swap accounting we can only limit memory, not swap
+    // Only memory is limited (config files are skipped since they may limit
+    // cpus too). Without swap accounting we can limit memory but not swap.
+    let memory_only = ["--no-config", "--memory=64M", "cat"];
     sandbox.run_with_env(
-        &["--memory=64M", "cat", "/sys/fs/cgroup/memory.max"],
+        &[&memory_only[..], &["/sys/fs/cgroup/memory.max"]].concat(),
         "TEST_NO_SWAP_ACCOUNTING",
         "1",
     )?;
     assert_eq!(sandbox.last_stdout.trim(), (64u64 << 20).to_string());
-    sandbox.run(&["--memory=64M", "cat", "/sys/fs/cgroup/memory.swap.max"])?;
+    sandbox.run(&[&memory_only[..], &["/sys/fs/cgroup/cpu.max"]].concat())?;
+    assert_eq!(sandbox.last_stdout.trim(), "max 100000");
+    sandbox.run(
+        &[&memory_only[..], &["/sys/fs/cgroup/memory.swap.max"]].concat(),
+    )?;
     assert_eq!(sandbox.last_stdout.trim(), "max");
     sandbox.run(&["stop"])?;
 
     // Normally swap is disabled
-    sandbox.run(&["--memory=64M", "cat", "/sys/fs/cgroup/memory.swap.max"])?;
+    sandbox.run(
+        &[&memory_only[..], &["/sys/fs/cgroup/memory.swap.max"]].concat(),
+    )?;
     assert_eq!(sandbox.last_stdout.trim(), "0");
     Ok(())
 }
