@@ -1,3 +1,4 @@
+mod cgroup;
 pub(crate) mod changes;
 mod delete;
 mod exec;

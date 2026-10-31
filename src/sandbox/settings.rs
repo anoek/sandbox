@@ -10,6 +10,11 @@ pub struct SandboxSettings {
     pub mounts: Vec<MountHash>,
     pub network: crate::config::Network,
     pub bind_mounts: Vec<BindMount>,
+    // Defaulted so settings from sandboxes started by older versions load
+    #[serde(default)]
+    pub cpus: Option<f64>,
+    #[serde(default)]
+    pub memory: Option<u64>,
 }
 
 impl SandboxSettings {
@@ -19,6 +24,8 @@ impl SandboxSettings {
             mounts: mounts.to_vec(),
             network: config.net.clone(),
             bind_mounts: config.bind_mounts.clone(),
+            cpus: config.cpus,
+            memory: config.memory,
         }
     }
 
@@ -73,6 +80,16 @@ impl SandboxSettings {
                 "Network configuration has changed. Existing: {:?}, Current: {:?}. Please stop existing sandbox to change network settings.",
                 self.network,
                 current_settings.network
+            ));
+        }
+
+        if self.cpus != current_settings.cpus
+            || self.memory != current_settings.memory
+        {
+            return Err(anyhow!(
+                "Resource limits have changed. Existing: {}, Current: {}. Please stop the existing sandbox to change resource limits.",
+                describe_limits(self.cpus, self.memory),
+                describe_limits(current_settings.cpus, current_settings.memory),
             ));
         }
 
@@ -150,4 +167,14 @@ impl SandboxSettings {
 
         Ok(())
     }
+}
+
+pub(crate) fn describe_limits(
+    cpus: Option<f64>,
+    memory: Option<u64>,
+) -> String {
+    let cpus = cpus.map_or("unlimited".to_string(), |c| c.to_string());
+    let memory =
+        memory.map_or("unlimited".to_string(), |m| format!("{} bytes", m));
+    format!("cpus={} memory={}", cpus, memory)
 }

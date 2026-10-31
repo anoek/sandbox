@@ -1,4 +1,5 @@
 use super::PartialConfig;
+use super::limits::{available_cpus, parse_cpus, parse_memory};
 use crate::config::{BindMount, BindMountOptions, Network};
 use crate::util::{
     can_access, can_mkdir, expand_tilde_path, find_mount_point, mkdir,
@@ -172,6 +173,16 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
 
+    for (var, key, field) in [
+        ("SANDBOX_CPUS", "cpus", &mut partial_config.cpus),
+        ("SANDBOX_MEMORY", "memory", &mut partial_config.memory),
+    ] {
+        if let Some(value) = env::var(var).ok().filter(|v| !v.is_empty()) {
+            *field = Some(value);
+            sources.insert(key.into(), "environment".into());
+        }
+    }
+
     // Override with CLI args if provided (highest precedence)
     if let Some(log_level) = cli.log_level {
         partial_config.log_level = Some(log_level);
@@ -228,6 +239,16 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("audio".into(), "cli".into());
     }
 
+    if let Some(cpus) = cli.cpus {
+        partial_config.cpus = Some(cpus);
+        sources.insert("cpus".into(), "cli".into());
+    }
+
+    if let Some(memory) = cli.memory {
+        partial_config.memory = Some(memory);
+        sources.insert("memory".into(), "cli".into());
+    }
+
     // Bind mounts and masks from the CLI form the highest precedence layer
     let mut cli_bind_layer = cli.bind.unwrap_or_default();
     if let Some(cli_mask_paths) = cli.mask {
@@ -263,6 +284,24 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     let audio = partial_config.audio.unwrap_or(false);
     if !sources.contains_key("audio") {
         sources.insert("audio".into(), "default".into());
+    }
+
+    let cpus = partial_config
+        .cpus
+        .map(|cpus| parse_cpus(&cpus, available_cpus()))
+        .transpose()?
+        .flatten();
+    if !sources.contains_key("cpus") {
+        sources.insert("cpus".into(), "default".into());
+    }
+
+    let memory = partial_config
+        .memory
+        .map(|memory| parse_memory(&memory))
+        .transpose()?
+        .flatten();
+    if !sources.contains_key("memory") {
+        sources.insert("memory".into(), "default".into());
     }
 
     let storage_dir = resolve_sandbox_storage_dir(
@@ -357,6 +396,8 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         bind_mounts,
         no_default_binds,
         audio,
+        cpus,
+        memory,
         config_files,
     };
 
@@ -723,6 +764,14 @@ fn merge_configs(
         base.audio = Some(audio);
         sources.insert("audio".into(), source.into());
     }
+    if let Some(cpus) = override_config.cpus {
+        base.cpus = Some(cpus);
+        sources.insert("cpus".into(), source.into());
+    }
+    if let Some(memory) = override_config.memory {
+        base.memory = Some(memory);
+        sources.insert("memory".into(), source.into());
+    }
     // Bind mounts and masks from each config file form their own layer
     let mut bind_layer = vec![];
     if let Some(bind_mounts) = override_config.bind {
@@ -922,6 +971,8 @@ mod tests {
             bind_mounts: vec![],
             no_default_binds: false,
             audio: false,
+            cpus: None,
+            memory: None,
             config_files: vec![],
         };
         assert!(validate_config(&config).is_ok());
@@ -998,6 +1049,8 @@ mod tests {
             mask: Some(vec!["/tmp/test3".to_string()]),
             no_default_binds: Some(true),
             audio: Some(true),
+            cpus: Some("-2".to_string()),
+            memory: Some("4G".to_string()),
         };
 
         merge_configs(
@@ -1022,6 +1075,10 @@ mod tests {
         assert!(matches!(base.net, Some(Network::Host)));
         assert_eq!(base.ignored, Some(true));
         assert_eq!(base.audio, Some(true));
+        assert_eq!(base.cpus, Some("-2".to_string()));
+        assert_eq!(base.memory, Some("4G".to_string()));
+        assert_eq!(sources.get("cpus"), Some(&"test-config".to_string()));
+        assert_eq!(sources.get("memory"), Some(&"test-config".to_string()));
 
         // Each merged config produces its own bind layer
         let expected_layer = vec![
