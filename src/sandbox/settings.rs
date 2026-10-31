@@ -169,7 +169,10 @@ impl SandboxSettings {
     }
 }
 
-fn describe_limits(cpus: Option<f64>, memory: Option<u64>) -> String {
+pub(crate) fn describe_limits(
+    cpus: Option<f64>,
+    memory: Option<u64>,
+) -> String {
     let cpus = cpus.map_or("unlimited".to_string(), |c| c.to_string());
     let memory =
         memory.map_or("unlimited".to_string(), |m| format!("{} bytes", m));

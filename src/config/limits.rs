@@ -4,6 +4,13 @@ use serde::Deserialize;
 /// The smallest CPU limit cgroups will accept: a 1ms quota per 100ms period
 const MIN_CPUS: f64 = 0.01;
 
+/// Removes a limit, e.g. to override one set in a config file
+const UNLIMITED: &str = "unlimited";
+
+fn is_unlimited(spec: &str) -> bool {
+    spec.trim().eq_ignore_ascii_case(UNLIMITED)
+}
+
 /// Number of CPUs this process may run on. This matches `nproc` unless we
 /// are already running under a CPU quota, in which case the quota is used.
 pub fn available_cpus() -> usize {
@@ -14,14 +21,18 @@ pub fn available_cpus() -> usize {
 
 /// Parses a CPU limit. Positive values are a number of CPUs and may be
 /// fractional. Negative values mean all but that many of the `available`
-/// CPUs, so -2 on a 32 CPU machine means 30.
-pub fn parse_cpus(spec: &str, available: usize) -> Result<f64> {
+/// CPUs, so -2 on a 32 CPU machine means 30. "unlimited" means no limit.
+pub fn parse_cpus(spec: &str, available: usize) -> Result<Option<f64>> {
     let invalid = || {
         anyhow!(
-            "Invalid cpus value '{}': expected a number of CPUs such as 2 or 1.5, or a negative number such as -2 to use all but that many CPUs",
+            "Invalid cpus value '{}': expected a number of CPUs such as 2 or 1.5, a negative number such as -2 to use all but that many CPUs, or unlimited",
             spec
         )
     };
+
+    if is_unlimited(spec) {
+        return Ok(None);
+    }
 
     let value: f64 = spec.trim().parse().map_err(|_| invalid())?;
     if !value.is_finite() || value == 0.0 {
@@ -44,18 +55,23 @@ pub fn parse_cpus(spec: &str, available: usize) -> Result<f64> {
         ));
     }
 
-    Ok(cpus)
+    Ok(Some(cpus))
 }
 
 /// Parses a memory size such as 512M, 4G, 1.5GiB or a plain number of bytes.
-/// Suffixes are binary (K = 1024) and case insensitive.
-pub fn parse_memory(spec: &str) -> Result<u64> {
+/// Suffixes are binary (K = 1024) and case insensitive. "unlimited" means no
+/// limit.
+pub fn parse_memory(spec: &str) -> Result<Option<u64>> {
     let invalid = || {
         anyhow!(
-            "Invalid memory value '{}': expected a size such as 512M or 4G",
+            "Invalid memory value '{}': expected a size such as 512M or 4G, or unlimited",
             spec
         )
     };
+
+    if is_unlimited(spec) {
+        return Ok(None);
+    }
 
     let trimmed = spec.trim();
     let split = trimmed
@@ -78,7 +94,7 @@ pub fn parse_memory(spec: &str) -> Result<u64> {
         return Err(invalid());
     }
 
-    Ok(bytes as u64)
+    Ok(Some(bytes as u64))
 }
 
 /// Lets config files specify limits as either numbers or strings, e.g.
@@ -114,13 +130,15 @@ mod tests {
 
     #[test]
     fn test_parse_cpus() {
-        assert_eq!(parse_cpus("2", 32).unwrap(), 2.0);
-        assert_eq!(parse_cpus(" 1.5 ", 32).unwrap(), 1.5);
-        assert_eq!(parse_cpus("0.01", 32).unwrap(), 0.01);
-        assert_eq!(parse_cpus("64", 32).unwrap(), 64.0);
-        assert_eq!(parse_cpus("-2", 32).unwrap(), 30.0);
-        assert_eq!(parse_cpus("-0.5", 4).unwrap(), 3.5);
-        assert_eq!(parse_cpus("-31", 32).unwrap(), 1.0);
+        assert_eq!(parse_cpus("2", 32).unwrap(), Some(2.0));
+        assert_eq!(parse_cpus(" 1.5 ", 32).unwrap(), Some(1.5));
+        assert_eq!(parse_cpus("0.01", 32).unwrap(), Some(0.01));
+        assert_eq!(parse_cpus("64", 32).unwrap(), Some(64.0));
+        assert_eq!(parse_cpus("-2", 32).unwrap(), Some(30.0));
+        assert_eq!(parse_cpus("-0.5", 4).unwrap(), Some(3.5));
+        assert_eq!(parse_cpus("-31", 32).unwrap(), Some(1.0));
+        assert_eq!(parse_cpus("unlimited", 32).unwrap(), None);
+        assert_eq!(parse_cpus(" Unlimited ", 32).unwrap(), None);
     }
 
     #[test]
@@ -140,16 +158,18 @@ mod tests {
 
     #[test]
     fn test_parse_memory() {
-        assert_eq!(parse_memory("1024").unwrap(), 1024);
-        assert_eq!(parse_memory("1024b").unwrap(), 1024);
-        assert_eq!(parse_memory("4k").unwrap(), 4096);
-        assert_eq!(parse_memory("4KiB").unwrap(), 4096);
-        assert_eq!(parse_memory("512M").unwrap(), 512 << 20);
-        assert_eq!(parse_memory("512mb").unwrap(), 512 << 20);
-        assert_eq!(parse_memory(" 4G ").unwrap(), 4 << 30);
-        assert_eq!(parse_memory("4 GiB").unwrap(), 4 << 30);
-        assert_eq!(parse_memory("1.5G").unwrap(), 3 << 29);
-        assert_eq!(parse_memory("2T").unwrap(), 2 << 40);
+        assert_eq!(parse_memory("1024").unwrap(), Some(1024));
+        assert_eq!(parse_memory("1024b").unwrap(), Some(1024));
+        assert_eq!(parse_memory("4k").unwrap(), Some(4096));
+        assert_eq!(parse_memory("4KiB").unwrap(), Some(4096));
+        assert_eq!(parse_memory("512M").unwrap(), Some(512 << 20));
+        assert_eq!(parse_memory("512mb").unwrap(), Some(512 << 20));
+        assert_eq!(parse_memory(" 4G ").unwrap(), Some(4 << 30));
+        assert_eq!(parse_memory("4 GiB").unwrap(), Some(4 << 30));
+        assert_eq!(parse_memory("1.5G").unwrap(), Some(3 << 29));
+        assert_eq!(parse_memory("2T").unwrap(), Some(2 << 40));
+        assert_eq!(parse_memory("unlimited").unwrap(), None);
+        assert_eq!(parse_memory("UNLIMITED").unwrap(), None);
     }
 
     #[test]

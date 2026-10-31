@@ -263,22 +263,25 @@ fn ai_test_limits_memory_enforced(mut sandbox: SandboxManager) -> Result<()> {
     }
     sandbox.run(&["stop"])?;
 
-    // tail has to buffer the whole newline-free input, which won't fit
-    assert!(sandbox.xfail(&[
+    // tail has to buffer the whole newline-free input, which won't fit.
+    // memory.events is read in the same command so we see this cgroup's
+    // counters even if the OOM killer took down more than tail.
+    sandbox.run(&[
         "--memory=32M",
         "sh",
         "-c",
-        "head -c 256M /dev/zero | tail > /dev/null",
-    ]));
-
-    sandbox.run(&["--memory=32M", "cat", "/sys/fs/cgroup/memory.events"])?;
-    let oom_kills: u64 = sandbox
-        .last_stdout
+        "head -c 256M /dev/zero | tail > /dev/null; \
+         echo \"tail exited with $?\"; \
+         cat /sys/fs/cgroup/memory.events",
+    ])?;
+    let output = sandbox.last_stdout.clone();
+    assert!(output.contains("tail exited with 137"), "{}", output);
+    let oom_kills: u64 = output
         .lines()
         .find_map(|line| line.strip_prefix("oom_kill "))
         .expect("memory.events should have an oom_kill entry")
         .parse()?;
-    assert!(oom_kills >= 1);
+    assert!(oom_kills >= 1, "{}", output);
     Ok(())
 }
 
@@ -508,5 +511,92 @@ fn ai_test_limits_stop_cgroup_busy(mut sandbox: SandboxManager) -> Result<()> {
     sudo(&["rmdir", &child.to_string_lossy()])?;
     sudo(&["rmdir", &cgroup.to_string_lossy()])?;
     assert!(!cgroup.exists());
+    Ok(())
+}
+
+#[rstest]
+fn ai_test_limits_unlimited_override(
+    mut sandbox: SandboxManager,
+) -> Result<()> {
+    // "unlimited" removes a limit set by a less specific source
+    let config =
+        write_config(&sandbox, "limited", "cpus = 2\nmemory = \"4G\"\n")?;
+    sandbox.run(&[
+        "--config",
+        &config,
+        "--cpus=unlimited",
+        "--memory=Unlimited",
+        "config",
+        "cpus",
+        "memory",
+    ])?;
+    assert!(sandbox.last_stdout.contains("cpus=unlimited"));
+    assert!(sandbox.last_stdout.contains("memory=unlimited"));
+
+    sandbox.run_with_env(
+        &["--config", &config, "config", "cpus"],
+        "SANDBOX_CPUS",
+        "unlimited",
+    )?;
+    assert_eq!(sandbox.last_stdout.trim(), "unlimited");
+
+    let unlimited =
+        write_config(&sandbox, "unlimited", "memory = \"unlimited\"\n")?;
+    sandbox.run(&["--config", &unlimited, "config", "memory"])?;
+    assert_eq!(sandbox.last_stdout.trim(), "unlimited");
+
+    // Without any limits the sandbox doesn't get a cgroup
+    if limits_available(&mut sandbox) {
+        sandbox.run(&["stop"])?;
+        sandbox.run(&[
+            "--config",
+            &config,
+            "--cpus=unlimited",
+            "--memory=unlimited",
+            "true",
+        ])?;
+        assert!(host_cgroup(&sandbox).is_none());
+    }
+    Ok(())
+}
+
+#[rstest]
+fn ai_test_limits_nested(mut sandbox: SandboxManager) -> Result<()> {
+    if !limits_available(&mut sandbox) {
+        return Ok(());
+    }
+    sandbox.run(&["stop"])?;
+
+    // A sandbox inside another one can't manage cgroups, so instead of its
+    // own limits it shares the limits of the sandbox it's running in
+    let inner = get_sandbox_bin() + "-setuid";
+    sandbox.run(&[
+        "--no-config",
+        "--cpus=2",
+        &inner,
+        "--no-config",
+        "--cpus=1",
+        "cat",
+        "/sys/fs/cgroup/cpu.max",
+    ])?;
+    assert_eq!(sandbox.last_stdout.trim(), "200000 100000");
+    assert!(
+        sandbox.last_stderr.contains(
+            "shares the limits of the sandbox it's running in (cpus=2 memory=unlimited)"
+        ),
+        "{}",
+        sandbox.last_stderr
+    );
+
+    // The warning makes it clear when that means no limits at all
+    sandbox.run(&["stop"])?;
+    sandbox.run(&["--no-config", &inner, "--no-config", "--cpus=1", "true"])?;
+    assert!(
+        sandbox.last_stderr.contains(
+            "shares the limits of the sandbox it's running in (cpus=unlimited memory=unlimited)"
+        ),
+        "{}",
+        sandbox.last_stderr
+    );
     Ok(())
 }

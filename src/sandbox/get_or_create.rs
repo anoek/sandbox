@@ -194,9 +194,7 @@ impl Sandbox {
 
         /* Create a cgroup to enforce any resource limits. We do this first
          * so we fail before mounting anything if limits aren't available. */
-        let cgroup = sandbox
-            .create_cgroup(&config)
-            .context("Failed to set up resource limits")?;
+        let cgroup = sandbox.create_cgroup_or_share_outer(&config)?;
 
         trace!("Mounting sandbox");
         let started = sandbox

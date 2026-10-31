@@ -289,7 +289,8 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     let cpus = partial_config
         .cpus
         .map(|cpus| parse_cpus(&cpus, available_cpus()))
-        .transpose()?;
+        .transpose()?
+        .flatten();
     if !sources.contains_key("cpus") {
         sources.insert("cpus".into(), "default".into());
     }
@@ -297,7 +298,8 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     let memory = partial_config
         .memory
         .map(|memory| parse_memory(&memory))
-        .transpose()?;
+        .transpose()?
+        .flatten();
     if !sources.contains_key("memory") {
         sources.insert("memory".into(), "default".into());
     }

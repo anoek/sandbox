@@ -83,7 +83,8 @@ pub struct Args {
 
     /// Limit how many CPUs the sandbox can use. Fractional values such as 1.5
     /// are allowed. Negative values mean all but that many CPUs, so -2 on a
-    /// 32 CPU machine allows the sandbox to use 30. Requires cgroup v2.
+    /// 32 CPU machine allows the sandbox to use 30. Use "unlimited" to remove
+    /// a limit set in a config file. Requires cgroup v2.
     #[arg(
         long,
         global = true,
@@ -93,8 +94,8 @@ pub struct Args {
     pub cpus: Option<String>,
 
     /// Limit how much memory the sandbox can use, for example 512M or 4G.
-    /// Swap is not available to sandboxes with a memory limit. Requires
-    /// cgroup v2.
+    /// Swap is not available to sandboxes with a memory limit. Use
+    /// "unlimited" to remove a limit set in a config file. Requires cgroup v2.
     #[arg(long, global = true, value_name = "SIZE")]
     pub memory: Option<String>,
 

@@ -223,8 +223,12 @@ its largest process.
 +
 Resource limits use cgroup v2 and apply to every process in the sandbox. They
 are set when the sandbox starts, so you need to stop the sandbox to change
-them. They may not be available when `sandbox` is run inside a container or
-another sandbox.
+them. Use `unlimited` to remove a limit set in a config file, for example
+`--cpus=unlimited` or `SANDBOX_MEMORY=unlimited`.
++
+A sandbox started inside another sandbox can't set up limits of its own.
+Instead it warns and shares the limits of the sandbox it's running in. Limits
+may not be available at all when `sandbox` is run inside a container.
 
 `--json`::
 Formats action output as a JSON blob. Does nothing for sandboxed commands

@@ -6,9 +6,9 @@
 //! every process that later joins the sandbox is moved into it.
 
 use crate::config::Config;
-use crate::sandbox::Sandbox;
+use crate::sandbox::{Sandbox, SandboxSettings, describe_limits};
 use anyhow::{Context, Result, anyhow};
-use log::trace;
+use log::{debug, trace, warn};
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -43,6 +43,34 @@ impl Sandbox {
         Path::new(CGROUP_ROOT)
             .join(cgroup_parent())
             .join(self.cgroup_name())
+    }
+
+    /// Sets up our cgroup like create_cgroup, except that inside another
+    /// sandbox, where cgroups can't be managed, we warn and run without a
+    /// cgroup of our own. We're still in the outer sandbox's cgroup, so its
+    /// limits continue to apply.
+    pub(crate) fn create_cgroup_or_share_outer(
+        &self,
+        config: &Config,
+    ) -> Result<Option<OwnedFd>> {
+        let error = match self.create_cgroup(config) {
+            Ok(cgroup) => return Ok(cgroup),
+            Err(e) => e.context("Failed to set up resource limits"),
+        };
+
+        // A nested sandbox's storage directory is the outer sandbox's data
+        // directory, which holds the outer sandbox's settings
+        let outer_settings = config.storage_dir.join("settings.json");
+        let Ok(outer) = SandboxSettings::load_from_file(&outer_settings) else {
+            return Err(error);
+        };
+
+        debug!("{:#}", error);
+        warn!(
+            "Resource limits can't be set up inside another sandbox, so this sandbox shares the limits of the sandbox it's running in ({})",
+            describe_limits(outer.cpus, outer.memory)
+        );
+        Ok(None)
     }
 
     /// Creates a cgroup with the resource limits from our config. Returns a
