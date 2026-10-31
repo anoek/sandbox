@@ -1037,11 +1037,12 @@ impl Sandbox {
         close(std::io::stdin().as_raw_fd())
             .context(format!("failed to close stdin"))?;
 
+        /* Exit on SIGTERM, with the signal number as our exit status. libc's
+         * exit has the C calling convention a signal handler needs, which
+         * std::process::exit doesn't. */
+        let exit: unsafe extern "C" fn(libc::c_int) -> ! = libc::exit;
         unsafe {
-            libc::signal(
-                libc::SIGTERM,
-                std::process::exit as libc::sighandler_t,
-            );
+            libc::signal(libc::SIGTERM, exit as libc::sighandler_t);
         }
 
         // sleep forever, this process hangs around only to host the namespaces so other processes
