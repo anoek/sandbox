@@ -56,12 +56,13 @@ fn host_cgroup(sandbox: &SandboxManager) -> Option<PathBuf> {
 fn ai_test_limits_unlimited_by_default(
     mut sandbox: SandboxManager,
 ) -> Result<()> {
-    sandbox.run(&["config", "cpus", "memory"])?;
+    // Skip config files, which may set limits
+    sandbox.run(&["--no-config", "config", "cpus", "memory"])?;
     assert!(sandbox.last_stdout.contains("cpus=unlimited"));
     assert!(sandbox.last_stdout.contains("memory=unlimited"));
 
     // Both keys are part of the full config listing
-    sandbox.run(&["config"])?;
+    sandbox.run(&["--no-config", "config"])?;
     assert!(sandbox.last_stdout.contains("cpus=unlimited"));
     assert!(sandbox.last_stdout.contains("memory=unlimited"));
     Ok(())
@@ -93,19 +94,33 @@ fn ai_test_limits_cli(mut sandbox: SandboxManager) -> Result<()> {
 
 #[rstest]
 fn ai_test_limits_env(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.run_with_env(&["config", "cpus"], "SANDBOX_CPUS", "3")?;
+    // Config files are skipped so they can't set limits of their own
+    let args = ["--no-config", "config"];
+    sandbox.run_with_env(
+        &[&args[..], &["cpus"]].concat(),
+        "SANDBOX_CPUS",
+        "3",
+    )?;
     assert_eq!(sandbox.last_stdout.trim(), "3");
 
-    sandbox.run_with_env(&["config", "memory"], "SANDBOX_MEMORY", "2G")?;
+    sandbox.run_with_env(
+        &[&args[..], &["memory"]].concat(),
+        "SANDBOX_MEMORY",
+        "2G",
+    )?;
     assert_eq!(sandbox.last_stdout.trim(), (2u64 << 30).to_string());
 
     // Empty values are ignored
-    sandbox.run_with_env(&["config", "cpus"], "SANDBOX_CPUS", "")?;
+    sandbox.run_with_env(
+        &[&args[..], &["cpus"]].concat(),
+        "SANDBOX_CPUS",
+        "",
+    )?;
     assert_eq!(sandbox.last_stdout.trim(), "unlimited");
 
     // The CLI takes precedence over the environment
     sandbox.run_with_env(
-        &["--cpus=1", "config", "cpus"],
+        &["--no-config", "--cpus=1", "config", "cpus"],
         "SANDBOX_CPUS",
         "3",
     )?;
@@ -273,8 +288,12 @@ fn ai_test_limits_changed(mut sandbox: SandboxManager) -> Result<()> {
         return Ok(());
     }
 
+    // Restart without config files, which may set limits of their own
+    sandbox.run(&["stop"])?;
+    sandbox.run(&["--no-config", "--cpus=1", "true"])?;
+
     // The sandbox is running with --cpus=1, so other limits are rejected
-    assert!(sandbox.xfail(&["true"]));
+    assert!(sandbox.xfail(&["--no-config", "true"]));
     assert!(sandbox.last_stderr.contains("Resource limits have changed"));
     assert!(
         sandbox
@@ -287,7 +306,7 @@ fn ai_test_limits_changed(mut sandbox: SandboxManager) -> Result<()> {
             .contains("Current: cpus=unlimited memory=unlimited")
     );
 
-    assert!(sandbox.xfail(&["--cpus=1", "--memory=1G", "true"]));
+    assert!(sandbox.xfail(&["--no-config", "--cpus=1", "--memory=1G", "true"]));
     assert!(
         sandbox
             .last_stderr
@@ -295,9 +314,9 @@ fn ai_test_limits_changed(mut sandbox: SandboxManager) -> Result<()> {
     );
 
     // The same limits are fine, and stopping lets us change them
-    sandbox.run(&["--cpus=1", "true"])?;
+    sandbox.run(&["--no-config", "--cpus=1", "true"])?;
     sandbox.run(&["stop"])?;
-    sandbox.run(&["--cpus=2", "true"])?;
+    sandbox.run(&["--no-config", "--cpus=2", "true"])?;
     Ok(())
 }
 
