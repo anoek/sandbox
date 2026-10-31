@@ -134,6 +134,13 @@ fn ai_test_audio_with_no_default_binds(
 fn ai_test_audio_mounted_in_sandbox(mut sandbox: SandboxManager) -> Result<()> {
     let paths = host_audio_paths();
 
+    // Without audio devices or sockets, e.g. on CI runners, --audio has
+    // nothing to bind, so there's nothing to check
+    if paths.is_empty() {
+        eprintln!("No audio devices or sockets found, skipping");
+        return Ok(());
+    }
+
     for path in &paths {
         assert!(sandbox.xfail(&["--no-config", "test", "-e", path]));
     }
